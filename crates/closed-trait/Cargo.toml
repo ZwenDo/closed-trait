@@ -1,0 +1,18 @@
+[package]
+name = "closed-trait"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords.workspace = true
+rust-version.workspace = true
+categories = ["rust-patterns", "development-tools", "no-std", "no-std::no-alloc"]
+description = "Seal a trait to a fixed set of types, and generate an enum and match macro over them"
+
+[dependencies]
+closed-trait-macros = { path = "../closed-trait-macros", version = "0.1.0" }
+
+[dev-dependencies]
+trybuild = "1.0.119"

@@ -1,0 +1,6 @@
+error: `#[enumerate(match_any)]` cannot match `Plain`: it implements `Store<i32>`, not `Store<T>`, so it is not a variant of every `Store<T>`.
+       Drop the `match_any` option, or make `Plain` generic over the same parameters as `Store`
+ --> tests/ui/match_any_rejects_fixed_entry.rs:7:10
+  |
+7 | #[sealed(Plain: Store<i32>, Boxed<T>)]
+  |          ^^^^^

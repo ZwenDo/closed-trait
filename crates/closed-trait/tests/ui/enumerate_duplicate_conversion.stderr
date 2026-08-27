@@ -1,0 +1,6 @@
+error: `Plain` is listed twice for the same `AnyFoo`, so `into_enum` would have two answers.
+       Entries may share a type only when they pin different arguments, which needs the enum to stay generic — some entry has to name the parameter rather than fixing it
+ --> tests/ui/enumerate_duplicate_conversion.rs:6:27
+  |
+6 | #[sealed(Plain: Foo<i32>, Plain as PlainF64: Foo<f64>)]
+  |                           ^^^^^

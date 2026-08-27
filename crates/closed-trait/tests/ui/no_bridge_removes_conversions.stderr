@@ -1,0 +1,12 @@
+error[E0599]: no method named `as_ref` found for enum `AnyShape` in the current scope
+  --> tests/ui/no_bridge_removes_conversions.rs:14:19
+   |
+ 5 | #[enumerate(no_bridge)]
+   | ----------------------- method `as_ref` not found for this enum
+...
+14 |     let _ = owned.as_ref();
+   |                   ^^^^^^ method not found in `AnyShape`
+   |
+   = help: items from traits can only be used if the trait is implemented and in scope
+   = note: the following trait defines an item `as_ref`, perhaps you need to implement it:
+           candidate #1: `AsRef`

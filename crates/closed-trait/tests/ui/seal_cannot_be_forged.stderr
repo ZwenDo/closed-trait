@@ -1,0 +1,26 @@
+error[E0277]: `Sneaky` cannot be given `Shape`'s seal from outside the macro that wrote it
+  --> tests/ui/seal_cannot_be_forged.rs:12:33
+   |
+12 | impl __sealed_Shape::Sealed for Sneaky {}
+   |                                 ^^^^^^ unsatisfied trait bound
+   |
+help: the trait `Unforgeable` is not implemented for `Sneaky`
+  --> tests/ui/seal_cannot_be_forged.rs:4:1
+   |
+ 4 | pub struct Sneaky;
+   | ^^^^^^^^^^^^^^^^^
+   = note: add the type to `#[sealed(..)]` on `Shape` instead of implementing this
+help: the trait `Unforgeable` is implemented for `Square`
+  --> tests/ui/seal_cannot_be_forged.rs:6:1
+   |
+ 6 | #[sealed(Square)]
+   | ^^^^^^^^^^^^^^^
+note: required by a bound in `Sealed`
+  --> tests/ui/seal_cannot_be_forged.rs:6:1
+   |
+ 6 | #[sealed(Square)]
+   | ^^^^^^^^^^^^^^^^^ required by this bound in `Sealed`
+   = note: `Sealed` is a "sealed trait", because to implement it you also need to implement `__sealed_Shape::unforgeable::Unforgeable`, which is not accessible; this is usually done to force you to use one of the provided types that already implement it
+   = help: the following type implements the trait:
+             Square
+   = note: this error originates in the attribute macro `sealed` (in Nightly builds, run with -Z macro-backtrace for more info)

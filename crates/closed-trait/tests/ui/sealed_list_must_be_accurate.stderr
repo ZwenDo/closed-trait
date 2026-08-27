@@ -1,0 +1,24 @@
+error[E0277]: the trait bound `Triangle: Shape` is not satisfied
+ --> tests/ui/sealed_list_must_be_accurate.rs:6:1
+  |
+6 | #[sealed(Square, Triangle)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+  |
+help: the trait `Shape` is not implemented for `Triangle`
+ --> tests/ui/sealed_list_must_be_accurate.rs:4:1
+  |
+4 | pub struct Triangle;
+  | ^^^^^^^^^^^^^^^^^^^
+help: the trait `Shape` is implemented for `Square`
+ --> tests/ui/sealed_list_must_be_accurate.rs:9:1
+  |
+9 | impl Shape for Square {}
+  | ^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `assert`
+ --> tests/ui/sealed_list_must_be_accurate.rs:7:11
+  |
+6 | #[sealed(Square, Triangle)]
+  | --------------------------- required by a bound in this function
+7 | pub trait Shape {}
+  |           ^^^^^ required by this bound in `assert`
+  = note: this error originates in the attribute macro `sealed` (in Nightly builds, run with -Z macro-backtrace for more info)

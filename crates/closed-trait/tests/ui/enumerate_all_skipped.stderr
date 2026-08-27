@@ -1,0 +1,7 @@
+error: every enum was skipped, which leaves `#[enumerate]` nothing to generate
+ --> tests/ui/enumerate_all_skipped.rs:5:1
+  |
+5 | #[enumerate(owned(skip), ref(skip), mut(skip))]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `enumerate` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -1,0 +1,5 @@
+error: unknown option `visitor`, expected `owned`, `ref`, `mut`, `name`, `match_any`, `no_bridge` or `crate`
+ --> tests/ui/enumerate_unknown_option.rs:5:13
+  |
+5 | #[enumerate(visitor)]
+  |             ^^^^^^^

@@ -1,0 +1,5 @@
+error: `Az` is not the trait being sealed. The annotation says how `Plain` implements `Foo`, so write `Plain: Foo<i32>`
+ --> tests/ui/sealed_instantiation_names_the_trait.rs:6:17
+  |
+6 | #[sealed(Plain: Az<i32>)]
+  |                 ^^^^^^^

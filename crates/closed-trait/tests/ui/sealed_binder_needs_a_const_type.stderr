@@ -1,0 +1,6 @@
+error: expected `:`
+       `for<..>` declares parameters, as in `for<'a, T: Clone, const N: usize>`
+ --> tests/ui/sealed_binder_needs_a_const_type.rs:6:21
+  |
+6 | #[sealed(for<const N> Array<N>)]
+  |                     ^

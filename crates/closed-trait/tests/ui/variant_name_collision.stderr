@@ -1,0 +1,6 @@
+error: `a::Foo` and `b::Foo` would both become the `Foo` variant, since a variant is named after the type's last path segment.
+       Give one an explicit name: `b::Foo as SomeName`
+ --> tests/ui/variant_name_collision.rs:7:18
+  |
+7 | #[sealed(a::Foo, b::Foo)]
+  |                  ^^^^^^

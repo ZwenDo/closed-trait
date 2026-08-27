@@ -1,0 +1,91 @@
+error[E0277]: the size for values of type `[i32]` cannot be known at compilation time
+  --> tests/ui/enumerate_needs_sized_types.rs:11:15
+   |
+11 | #[sealed(Dot, Tail)]
+   |               ^^^^ doesn't have a size known at compile-time
+   |
+   = help: within `Tail`, the trait `Sized` is not implemented for `[i32]`
+note: required because it appears within the type `Tail`
+  --> tests/ui/enumerate_needs_sized_types.rs:5:12
+   |
+ 5 | pub struct Tail {
+   |            ^^^^
+   = note: no field of an enum variant may have a dynamically sized type
+   = help: change the field's type to have a statically known size
+help: borrowed types always have a statically known size
+   |
+11 | #[sealed(Dot, &Tail)]
+   |               +
+help: the `Box` type always has a statically known size and allocates its contents in the heap
+   |
+11 | #[sealed(Dot, Box<Tail>)]
+   |               ++++    +
+
+error[E0277]: the size for values of type `[i32]` cannot be known at compilation time
+  --> tests/ui/enumerate_needs_sized_types.rs:10:1
+   |
+10 | #[enumerate(match_any)]
+   | ^^^^^^^^^^^^^^^^^^^^^^^ doesn't have a size known at compile-time
+   |
+   = help: within `Tail`, the trait `Sized` is not implemented for `[i32]`
+note: required because it appears within the type `Tail`
+  --> tests/ui/enumerate_needs_sized_types.rs:5:12
+   |
+ 5 | pub struct Tail {
+   |            ^^^^
+note: required by an implicit `Sized` bound in `From`
+  --> $RUST/core/src/convert/mod.rs
+   |
+   | pub const trait From<T>: Sized {
+   |                      ^ required by the implicit `Sized` requirement on this type parameter in `From`
+   = note: this error originates in the attribute macro `enumerate` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the size for values of type `[i32]` cannot be known at compilation time
+  --> tests/ui/enumerate_needs_sized_types.rs:10:1
+   |
+10 | #[enumerate(match_any)]
+   | ^^^^^^^^^^^^^^^^^^^^^^^ doesn't have a size known at compile-time
+   |
+   = help: within `Tail`, the trait `Sized` is not implemented for `[i32]`
+note: required because it appears within the type `Tail`
+  --> tests/ui/enumerate_needs_sized_types.rs:5:12
+   |
+ 5 | pub struct Tail {
+   |            ^^^^
+   = note: this error originates in the attribute macro `enumerate` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: function arguments must have a statically known size, borrowed types always have a known size
+   |
+10 | &#[enumerate(match_any)]
+   | +
+
+error[E0277]: the size for values of type `[i32]` cannot be known at compilation time
+  --> tests/ui/enumerate_needs_sized_types.rs:11:15
+   |
+11 | #[sealed(Dot, Tail)]
+   |               ^^^^ doesn't have a size known at compile-time
+   |
+   = help: within `Tail`, the trait `Sized` is not implemented for `[i32]`
+note: required because it appears within the type `Tail`
+  --> tests/ui/enumerate_needs_sized_types.rs:5:12
+   |
+ 5 | pub struct Tail {
+   |            ^^^^
+help: function arguments must have a statically known size, borrowed types always have a known size
+   |
+11 | #[sealed(Dot, &Tail)]
+   |               +
+
+error[E0277]: the size for values of type `[i32]` cannot be known at compilation time
+  --> tests/ui/enumerate_needs_sized_types.rs:10:1
+   |
+10 | #[enumerate(match_any)]
+   | ^^^^^^^^^^^^^^^^^^^^^^^ doesn't have a size known at compile-time
+   |
+   = help: within `Tail`, the trait `Sized` is not implemented for `[i32]`
+note: required because it appears within the type `Tail`
+  --> tests/ui/enumerate_needs_sized_types.rs:5:12
+   |
+ 5 | pub struct Tail {
+   |            ^^^^
+   = note: all function arguments must have a statically known size
+   = note: this error originates in the attribute macro `enumerate` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -1,0 +1,25 @@
+error[E0277]: `Triangle` cannot implement `Shape`
+  --> tests/ui/seal_rejects_unlisted.rs:10:16
+   |
+10 | impl Shape for Triangle {}
+   |                ^^^^^^^^ not permitted to implement `Shape` here
+   |
+help: the trait `Sealed` is not implemented for `Triangle`
+  --> tests/ui/seal_rejects_unlisted.rs:4:1
+   |
+ 4 | pub struct Triangle;
+   | ^^^^^^^^^^^^^^^^^^^
+   = note: only the types listed in `#[sealed(..)]` on `Shape` may implement it, and only at the instantiations listed there
+help: the trait `Sealed` is implemented for `Square`
+  --> tests/ui/seal_rejects_unlisted.rs:6:1
+   |
+ 6 | #[sealed(Square)]
+   | ^^^^^^^^^^^^^^^
+note: required by a bound in `Shape`
+  --> tests/ui/seal_rejects_unlisted.rs:6:1
+   |
+ 6 | #[sealed(Square)]
+   | ^^^^^^^^^^^^^^^^^ required by this bound in `Shape`
+ 7 | pub trait Shape {}
+   |           ----- required by a bound in this trait
+   = note: this error originates in the attribute macro `sealed` (in Nightly builds, run with -Z macro-backtrace for more info)

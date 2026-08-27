@@ -1,0 +1,6 @@
+error: `no_bridge` has nothing to leave out here: no conversion is written on the borrowing enum's shared form.
+       Write it on `owned` to drop `as_ref` and `as_mut` from the owned enum, or on `mut` to drop the reborrowing `as_ref`
+ --> tests/ui/no_bridge_on_ref_is_refused.rs:6:17
+  |
+6 | #[enumerate(ref(no_bridge))]
+  |                 ^^^^^^^^^

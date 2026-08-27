@@ -1,0 +1,5 @@
+error: `#[enumerate]` needs a `#[sealed(..)]` attribute written below it, to know which types the enum should hold
+ --> tests/ui/enumerate_wrong_order.rs:7:11
+  |
+7 | pub trait Shape {}
+  |           ^^^^^

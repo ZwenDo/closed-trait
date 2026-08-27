@@ -1,0 +1,5 @@
+error: `#[sealed(..)]` takes no options, but found `unimplemented = ..`
+ --> tests/ui/sealed_takes_no_options.rs:5:18
+  |
+5 | #[sealed(Square, unimplemented = "gone")]
+  |                  ^^^^^^^^^^^^^

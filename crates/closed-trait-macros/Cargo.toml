@@ -1,0 +1,23 @@
+[package]
+name = "closed-trait-macros"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+categories = ["rust-patterns"]
+description = "Attribute macros for the closed-trait crate"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "3.0.3", features = ["full"] }
+quote = "1.0.47"
+proc-macro2 = "1.0.106"
+
+[dev-dependencies]
+closed-trait.workspace = true

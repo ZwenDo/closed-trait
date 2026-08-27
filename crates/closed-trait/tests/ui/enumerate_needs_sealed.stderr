@@ -1,0 +1,5 @@
+error: `#[enumerate]` needs a `#[sealed(..)]` attribute written below it, to know which types the enum should hold
+ --> tests/ui/enumerate_needs_sealed.rs:4:11
+  |
+4 | pub trait Shape {}
+  |           ^^^^^

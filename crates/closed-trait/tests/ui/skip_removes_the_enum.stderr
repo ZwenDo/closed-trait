@@ -1,0 +1,27 @@
+error[E0425]: cannot find type `AnyShapeRef` in this scope
+  --> tests/ui/skip_removes_the_enum.rs:13:12
+   |
+ 5 | #[enumerate(ref(skip))]
+   | ----------------------- similarly named enum `AnyShape` defined here
+...
+13 |     let _: AnyShapeRef<'_> = AnyShape::from(Square).as_ref();
+   |            ^^^^^^^^^^^
+   |
+help: an enum with a similar name exists
+   |
+13 -     let _: AnyShapeRef<'_> = AnyShape::from(Square).as_ref();
+13 +     let _: AnyShape<'_> = AnyShape::from(Square).as_ref();
+   |
+
+error[E0599]: no method named `as_ref` found for enum `AnyShape` in the current scope
+  --> tests/ui/skip_removes_the_enum.rs:13:53
+   |
+ 5 | #[enumerate(ref(skip))]
+   | ----------------------- method `as_ref` not found for this enum
+...
+13 |     let _: AnyShapeRef<'_> = AnyShape::from(Square).as_ref();
+   |                                                     ^^^^^^ method not found in `AnyShape`
+   |
+   = help: items from traits can only be used if the trait is implemented and in scope
+   = note: the following trait defines an item `as_ref`, perhaps you need to implement it:
+           candidate #1: `AsRef`

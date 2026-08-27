@@ -1,0 +1,6 @@
+error: `'b` is neither declared by `Text` nor bound by a `for<..>`, so this entry would quietly mean every `'b`.
+       Write `for<'b> Slice<'b>` if that is what you meant, or name one of `Text`'s own lifetimes
+ --> tests/ui/sealed_lifetime_needs_a_binder.rs:6:16
+  |
+6 | #[sealed(Slice<'b>)]
+  |                ^^

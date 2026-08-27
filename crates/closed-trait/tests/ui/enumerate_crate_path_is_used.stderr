@@ -1,0 +1,23 @@
+error[E0405]: cannot find trait `Enumerable` in module `crate::elsewhere`
+  --> tests/ui/enumerate_crate_path_is_used.rs:10:1
+   |
+10 | #[enumerate(crate = "crate::elsewhere")]
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in `crate::elsewhere`
+   |
+   = note: this error originates in the attribute macro `enumerate` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0405]: cannot find trait `EnumerableRef` in module `crate::elsewhere`
+  --> tests/ui/enumerate_crate_path_is_used.rs:10:1
+   |
+10 | #[enumerate(crate = "crate::elsewhere")]
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in `crate::elsewhere`
+   |
+   = note: this error originates in the attribute macro `enumerate` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0405]: cannot find trait `EnumerableMut` in module `crate::elsewhere`
+  --> tests/ui/enumerate_crate_path_is_used.rs:10:1
+   |
+10 | #[enumerate(crate = "crate::elsewhere")]
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in `crate::elsewhere`
+   |
+   = note: this error originates in the attribute macro `enumerate` (in Nightly builds, run with -Z macro-backtrace for more info)

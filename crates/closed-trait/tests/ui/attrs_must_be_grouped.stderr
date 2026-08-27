@@ -1,0 +1,5 @@
+error: `attrs` applies to one enum at a time, as in `owned(attrs = "..")`
+ --> tests/ui/attrs_must_be_grouped.rs:5:13
+  |
+5 | #[enumerate(attrs = "#[derive(Debug)]")]
+  |             ^^^^^

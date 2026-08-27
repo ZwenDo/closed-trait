@@ -1,0 +1,5 @@
+error: unknown option `crate`, expected `skip`, `name`, `match_any`, `no_bridge` or `attrs`
+ --> tests/ui/enumerate_unknown_group_option.rs:6:17
+  |
+6 | #[enumerate(ref(crate = "::closed_trait"))]
+  |                 ^^^^^

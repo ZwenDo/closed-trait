@@ -1,0 +1,11 @@
+# Not published: it exists so that the generated match macro is exercised from a
+# *different* crate than the one it was generated in, which is the only thing
+# `#[macro_export]` buys and the only way it can regress.
+[package]
+name = "downstream"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+closed-trait.workspace = true
