@@ -442,7 +442,7 @@ fn borrowing_enum(
 ///
 /// Rust has no generic closures, so a body that has to run against the
 /// concrete type cannot be passed as a value. Pasting it into every arm is the
-/// way to have one body and still know which type it has — and unlike a method
+/// way to have one body and still know which type it has, and unlike a method
 /// taking it, `return` and `?` in that body leave the enclosing function.
 ///
 /// The binding has to be named by the caller: a `macro_rules!` one would be
@@ -511,7 +511,7 @@ fn match_macro(
         format!(
             "Expands to a `match` over every variant, so the binding is the concrete type rather \
              than the enum. In the three forms above it is a shared reference to, a unique \
-             reference to, or an owned {named} — match ergonomics make it follow the value."
+             reference to, or an owned {named}, and match ergonomics make it follow the value."
         )
     };
     let naming = "The binding is named at the call site rather than by the macro. One the macro \

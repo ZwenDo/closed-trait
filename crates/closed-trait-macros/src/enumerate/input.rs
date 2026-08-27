@@ -705,7 +705,7 @@ fn duplicate_conversions(variants: &[Variant], enum_ident: &Ident) -> Result<()>
                 format!(
                     "`{ty}` is listed twice for the same `{enum_ident}{args}`, so `into_enum` \
                      would have two answers.\nEntries may share a type only when they pin \
-                     different arguments, which needs the enum to stay generic — some entry has \
+                     different arguments, which needs the enum to stay generic: some entry has \
                      to name the parameter rather than fixing it"
                 ),
             ));

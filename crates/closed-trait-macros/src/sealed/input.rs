@@ -26,7 +26,7 @@ impl Input {
 /// An instantiation annotation has to name the trait being sealed.
 ///
 /// Only its arguments are ever read, so another name would sit there looking
-/// meaningful while doing nothing — and a typo would never be noticed.
+/// meaningful while doing nothing, and a typo would never be noticed.
 fn mismatched_instantiations(types: &[SealedType], item: &ItemTrait) -> Result<()> {
     for entry in types {
         let Some(path) = &entry.instantiation else {
@@ -62,8 +62,8 @@ fn mismatched_instantiations(types: &[SealedType], item: &ItemTrait) -> Result<(
 /// names them itself, as `Boxed<T>` does under `trait Store<T>`, or the entry
 /// annotates them, as in `Plain: Store<i32>`.
 ///
-/// Leaving it to inference nearly works — it finds the answer when there is a
-/// single impl, and reports a missing one — but a type implementing the trait
+/// Leaving it to inference nearly works: it finds the answer when there is a
+/// single impl, and reports a missing one. But a type implementing the trait
 /// at several instantiations gives `E0283: type annotations needed`, spanned on
 /// a generated function the caller never wrote. Refusing here costs one
 /// annotation and says what to write.
@@ -122,7 +122,7 @@ fn unpinned_entries(types: &[SealedType], item: &ItemTrait) -> Result<()> {
 /// A lifetime an entry names has to come from somewhere.
 ///
 /// Left to itself the macro would declare it, which quietly turns the entry
-/// into a claim about *every* lifetime — and makes renaming the trait's own
+/// into a claim about *every* lifetime, and makes renaming the trait's own
 /// parameter change what is sealed, since a name that matches the trait's
 /// carries the trait's bounds while one that does not carries none. `for<..>`
 /// says which was meant, exactly as it does for a type. `'_` and `'static` are

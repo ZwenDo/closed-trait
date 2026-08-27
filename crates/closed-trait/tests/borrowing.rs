@@ -127,8 +127,8 @@ fn a_generic_trait_borrows_too() {
     assert_eq!(*match_any_store_ref!(borrowed, s => s.get()), 7);
 }
 
-/// The mutable twin. It is deliberately *not* `Copy` — a unique reference is
-/// neither `Copy` nor `Clone` — and reaches the same places from a `&mut S`.
+/// The mutable twin. It is deliberately *not* `Copy`, since a unique reference
+/// is neither `Copy` nor `Clone`, and reaches the same places from a `&mut S`.
 ///
 /// A second trait rather than more options on the first: two `pub` traits of
 /// the same name asking for `match_any` would collide at the crate root, which

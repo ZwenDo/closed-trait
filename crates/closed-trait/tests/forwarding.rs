@@ -1,6 +1,6 @@
 //! Forwarding the trait's methods onto the enum, written by hand with the match
-//! macro. Every case that made a generated version awkward — returning `Self`,
-//! `unsafe`, `async`, a `where Self: ..` bound — is here an ordinary decision
+//! macro. Every case that made a generated version awkward (returning `Self`,
+//! `unsafe`, `async`, a `where Self: ..` bound) is here an ordinary decision
 //! taken in the impl, where the reader can see it.
 
 use core::future::Future;

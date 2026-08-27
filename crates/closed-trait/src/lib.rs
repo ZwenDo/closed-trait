@@ -41,7 +41,7 @@ pub use closed_trait_macros::{enumerate, sealed};
 /// concrete type rather than a generic one does need the import.
 ///
 /// The enum is a type *parameter* rather than an associated type so that one
-/// type can belong to several sealed traits at once — an associated type could
+/// type can belong to several sealed traits at once, since an associated type could
 /// only be chosen once per implementor. The cost is that `into_enum` on a
 /// concrete type belonging to more than one needs the target spelled out, by
 /// annotation or turbofish. `From` sidesteps that, since the enum is named by
@@ -59,7 +59,7 @@ pub trait Enumerable<Enum> {
 /// [`enumerate`] implements this for every permitted type and makes
 /// `for<'a> EnumerableRef<'a, AnyShapeRef<'a>>` a supertrait. The
 /// lifetime is a parameter of the trait rather than of the method, so the
-/// higher-ranked bound is nameable in the supertrait list — which is what lets
+/// higher-ranked bound is nameable in the supertrait list, which is what lets
 /// a caller reach the enum from a plain `&S`:
 ///
 /// ```

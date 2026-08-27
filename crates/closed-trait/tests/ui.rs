@@ -1,7 +1,7 @@
 //! Compile-failure fixtures.
 //!
 //! The `.stderr` files capture rustc's exact diagnostic wording, which changes
-//! between releases — so these are pinned to one toolchain rather than run on
+//! between releases, so these are pinned to one toolchain rather than run on
 //! whatever compiler happens to be installed. CI runs them in a single job that
 //! names that version; see `.github/workflows/ci.yml`.
 //!

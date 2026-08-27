@@ -4,7 +4,7 @@
 use closed_trait::{enumerate, sealed};
 
 /// A primitive gives a lowercase variant. The generated enums allow it, since
-/// the caller never chose that name — they wrote a type.
+/// the caller never chose that name: they wrote a type.
 ///
 /// No `match_any`: every entry pins an argument, which rules the macro out.
 #[enumerate]

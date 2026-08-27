@@ -108,7 +108,7 @@ fn accumulating_needs_no_value() {
     assert_eq!(total, 7);
 }
 
-/// The one thing that still wants a trait — a generic body as a parameter —
+/// The one thing that still wants a trait (a generic body as a parameter)
 /// takes three lines of ordinary Rust, dispatched by the macro.
 trait ShapeVisitor {
     fn visit<S: Shape>(&mut self, shape: &S) -> i32;

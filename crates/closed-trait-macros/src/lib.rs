@@ -33,7 +33,7 @@ use proc_macro::TokenStream;
 ///
 /// One rule governs everything in this section:
 ///
-/// **A bare name is a parameter only if the trait or a `for<..>` declares it** — otherwise it is
+/// **A bare name is a parameter only if the trait or a `for<..>` declares it**; otherwise it is
 /// whatever concrete type or const is in scope. The three cases below are the three ways an entry
 /// can answer that, and each takes lifetimes, types and const parameters alike.
 ///
@@ -100,7 +100,7 @@ use proc_macro::TokenStream;
 ///
 /// Lifetimes work the same way, except that for them the binder is not optional. Left out, the
 /// same spelling would mean the trait's lifetime or every lifetime depending on what the trait
-/// happened to call its parameter — so renaming that parameter would quietly change what is
+/// happened to call its parameter, so renaming that parameter would quietly change what is
 /// sealed:
 ///
 /// ```
@@ -114,13 +114,13 @@ use proc_macro::TokenStream;
 /// # fn main() {}
 /// ```
 ///
-/// Lifetimes, types and const parameters can be declared together, lifetimes first — as in
-/// `for<'a, T: Clone, const N: usize>` — and each is written exactly as it would be on an `impl`,
+/// Lifetimes, types and const parameters can be declared together, lifetimes first (as in
+/// `for<'a, T: Clone, const N: usize>`), and each is written exactly as it would be on an `impl`,
 /// so a const parameter carries its type.
 ///
 /// ## `as Name`
 ///
-/// Names the entry. The seal itself does not care — it is [`enumerate`][macro@enumerate] that reads
+/// Names the entry. The seal itself does not care: it is [`enumerate`][macro@enumerate] that reads
 /// the name, giving each variant the type's last path segment unless one is written here. Two
 /// entries collide over that in two ways.
 ///
@@ -168,7 +168,7 @@ use proc_macro::TokenStream;
 /// ```
 ///
 /// The name settles the *variant* only. The two entries must also pin different arguments, and
-/// some entry — `Boxed<T>` here — has to *mention* `T`. The enum is generic over the parameters
+/// some entry (`Boxed<T>` here) has to *mention* `T`. The enum is generic over the parameters
 /// its variants use, not over the trait's: an enum declaring one no variant uses is `E0392`. With
 /// every entry pinned there would be no `AnyStore<T>` at all, both entries would land in the same
 /// `AnyStore`, and `enumerate` would refuse it.
@@ -197,15 +197,16 @@ use proc_macro::TokenStream;
 /// entry annotates its instantiation, as in `Plain: Store<i32>`. An entry that does neither is
 /// refused, since nothing could then tell whether it implements the trait at all.
 ///
-/// A lifetime is never asked for, and not merely because inference usually copes. A type cannot implement the same trait at two different lifetimes — two such
-/// impls overlap, and coherence rejects them — so there is never more than one candidate to
-/// disambiguate. `#[sealed(Plain)]` under `trait Foo<'a>` is therefore accepted *and* checked: an
-/// entry implementing no `Foo` at all is still caught.
+/// A lifetime is never asked for, and not merely because inference usually copes. A type cannot
+/// implement the same trait at two different lifetimes: two such impls overlap, and coherence
+/// rejects them, so there is never more than one candidate to disambiguate. `#[sealed(Plain)]`
+/// under `trait Foo<'a>` is therefore accepted *and* checked: an entry implementing no `Foo` at all
+/// is still caught.
 ///
 /// # The seal is as precise as the list
 ///
 /// The marker carries the same type and const parameters the trait does, so `Plain: Store<i32>`
-/// permits `Plain` to implement `Store<i32>` and nothing else — an unlisted `impl Store<f64> for
+/// permits `Plain` to implement `Store<i32>` and nothing else: an unlisted `impl Store<f64> for
 /// Plain` is rejected:
 ///
 /// ```compile_fail
@@ -220,14 +221,14 @@ use proc_macro::TokenStream;
 /// # fn main() {}
 /// ```
 ///
-/// An entry naming the parameters instead, like `Boxed<T>`, permits every instantiation — which is
+/// An entry naming the parameters instead, like `Boxed<T>`, permits every instantiation, which is
 /// what naming them says. Lifetimes are not on the marker, for the reason above: they could never
 /// tell two entries apart.
 ///
 /// # What the seal is worth
 ///
 /// The marker trait is private to the module the attribute is written in, and carries a supertrait
-/// private one level deeper. Naming the marker is therefore not enough to satisfy it — the only
+/// private one level deeper. Naming the marker is therefore not enough to satisfy it: the only
 /// place both can be implemented is inside the generated module, which nothing but this macro
 /// writes. Code sitting directly beside the sealed trait cannot opt a type in, which a single level
 /// of privacy would have allowed.
@@ -243,8 +244,8 @@ pub fn sealed(args: TokenStream, item: TokenStream) -> TokenStream {
 /// Generates enums holding the types a trait is sealed to and macros rules to work with these
 /// enums.
 ///
-/// Reads its type list from the `#[sealed(..)]` attribute below it, so it must be written **above**
-/// — attribute macros run top down, and `#[sealed]` consumes itself when it expands.
+/// Reads its type list from the `#[sealed(..)]` attribute below it, so it must be written **above**;
+/// attribute macros run top down, and `#[sealed]` consumes itself when it expands.
 ///
 /// ```
 /// # use closed_trait::{enumerate, sealed};
@@ -275,7 +276,7 @@ pub fn sealed(args: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// All three are generated by default, each with one variant per entry named after the type's last
 /// path segment, and each taking the trait's visibility. A type not in upper camel case therefore
-/// gives a variant that is not either — `i32` yields an `i32` variant — so the enums carry
+/// gives a variant that is not either (`i32` yields an `i32` variant), so the enums carry
 /// `#[allow(non_camel_case_types)]`: the name came from a type, not from a choice the caller made.
 /// `as Name` is there for anyone who would rather write `I32`. Given the base `Shape` sealed
 /// trait:
@@ -286,8 +287,8 @@ pub fn sealed(args: TokenStream, item: TokenStream) -> TokenStream {
 /// | `AnyShapeRef<'a>` | `&'a Square`     | `as_enum_ref`, `From`, or `owned.as_ref()` |
 /// | `AnyShapeMut<'a>` | `&'a mut Square` | `as_enum_mut`, `From`, or `owned.as_mut()` |
 ///
-/// Each brings a supertrait with it — `Enumerable<AnyShape>` and the higher-ranked `for<'a>
-/// EnumerableRef<'a, AnyShapeRef<'a>>` and its `Mut` counterpart — which is what makes the enums
+/// Each brings a supertrait with it: `Enumerable<AnyShape>` and the higher-ranked `for<'a>
+/// EnumerableRef<'a, AnyShapeRef<'a>>` and its `Mut` counterpart, which is what makes the enums
 /// reachable from a generic `S: Shape` without naming them.
 ///
 /// The borrowing pair is what `into_enum` cannot give you: taking `self`, it needs the value moved
@@ -295,8 +296,8 @@ pub fn sealed(args: TokenStream, item: TokenStream) -> TokenStream {
 /// pointer and a discriminant rather than as wide as the largest permitted type. The shared one
 /// derives `Clone` and `Copy`.
 ///
-/// Conversions *between* the three — `as_ref` and `as_mut` on the owned enum, and `as_ref` on the
-/// unique one, which reborrows — come as inherent methods. `no_bridge` leaves them out.
+/// Conversions *between* the three (`as_ref` and `as_mut` on the owned enum, and `as_ref` on the
+/// unique one, which reborrows) come as inherent methods. `no_bridge` leaves them out.
 ///
 /// # Options
 ///
@@ -337,10 +338,10 @@ pub fn sealed(args: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// ## `attrs = ".."`
 ///
-/// Attributes to put on a generated enum, verbatim — derives, `#[non_exhaustive]`, `#[repr(..)]`,
+/// Attributes to put on a generated enum, verbatim: derives, `#[non_exhaustive]`, `#[repr(..)]`,
 /// anything. It is the one option that **must** be specific. What is valid differs between
-/// the three — the shared enum already derives `Copy`, the unique one cannot derive `Clone` at all
-/// — so one spelling spread across them would be a trap. A bare `attrs` is an error saying so.
+/// the three: the shared enum already derives `Copy`, and the unique one cannot derive `Clone` at
+/// all, so one spelling spread across them would be a trap. A bare `attrs` is an error saying so.
 ///
 /// ```
 /// # use closed_trait::{enumerate, sealed};
@@ -467,12 +468,12 @@ pub fn sealed(args: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// The option takes an optional name, so `match_any(match_shape)` generates `match_shape!` instead.
 /// Whether the macro can leave the crate depends on the trait's visibility, and so does whether
-/// it can collide — see [Visibility](#visibility).
+/// it can collide, see [Visibility](#visibility).
 ///
 /// # Visibility
 ///
 /// Everything generated takes the trait's own visibility: the three enums, the conversions between
-/// them, and the names the match macros are reached through. There is no option to change it — the
+/// them, and the names the match macros are reached through. There is no option to change it: the
 /// enums appear in the trait's supertrait bounds, so anything narrower would put a private type in
 /// a public interface.
 ///
@@ -493,7 +494,7 @@ pub fn sealed(args: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// The enum takes the trait's parameters that at least one entry names, with their bounds. Those
 /// parameters have to be nameable in the supertrait bound that pins the enum, and only the
-/// trait's own are in scope there — so an entry must be generic *solely* over parameters the trait
+/// trait's own are in scope there, so an entry must be generic *solely* over parameters the trait
 /// declares.
 ///
 /// ```
@@ -535,7 +536,7 @@ pub fn sealed(args: TokenStream, item: TokenStream) -> TokenStream {
 /// ```
 ///
 /// An entry that names no parameter the enum is generic over cannot produce a single enum type, and
-/// is rejected with a message naming the fix — annotate it in `#[sealed(..)]` with the
+/// is rejected with a message naming the fix: annotate it in `#[sealed(..)]` with the
 /// instantiation it implements.
 ///
 /// ## Pinned entries and `match_any`
@@ -606,7 +607,7 @@ pub fn sealed(args: TokenStream, item: TokenStream) -> TokenStream {
 /// written.
 ///
 /// None of this is a trade you elect. Pinning is the only way to put such a type in the enum at
-/// all — an entry that neither names the trait's parameters nor fixes them is refused outright — so
+/// all: an entry that neither names the trait's parameters nor fixes them is refused outright, so
 /// the macro is not something you give up in exchange, it is simply unavailable once a variant
 /// exists that is not valid at every instantiation. `match_any` needs every entry to name the
 /// trait's parameters rather than fix them, which is exactly the case where every variant is valid

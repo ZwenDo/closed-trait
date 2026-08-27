@@ -104,7 +104,7 @@ mod binders {
         }
     }
 
-    // Here `'a` is the trait's own, so it needs no binder — and means
+    // Here `'a` is the trait's own, so it needs no binder, and means
     // something different: this seal is tied to the trait's lifetime rather
     // than quantified over every one.
     #[sealed(Slice<'a>)]
@@ -235,7 +235,7 @@ fn one_type_may_be_listed_at_several_instantiations() {
 }
 
 /// Two entries may share a type when they pin different arguments, provided the
-/// enum stays generic — some entry has to name the parameter rather than fixing
+/// enum stays generic: some entry has to name the parameter rather than fixing
 /// it, or both would map into the same enum and `into_enum` would be ambiguous.
 mod shared_type_distinct_enums {
     use closed_trait::{enumerate, sealed};
