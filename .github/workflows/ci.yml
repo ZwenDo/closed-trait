@@ -17,8 +17,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # `beta` is a warning shot: rustc diagnostic changes break the trybuild
-        # fixtures, and this catches them a release before they reach stable.
+        # `beta` is a warning shot for changes coming to stable. It does not run
+        # the UI fixtures — those are pinned in the `ui` job below.
         rust: [stable, beta]
     steps:
       - uses: actions/checkout@v4
@@ -27,6 +27,22 @@ jobs:
           toolchain: ${{ matrix.rust }}
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace
+
+  ui:
+    # trybuild fixtures record rustc's exact wording, so they run on one pinned
+    # version. Bumping it means regenerating them:
+    #   TRYBUILD=overwrite TRYBUILD_UI=1 cargo test -p closed-trait --test ui
+    name: UI fixtures (rustc 1.98.0)
+    runs-on: ubuntu-latest
+    env:
+      TRYBUILD_UI: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.98.0"
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p closed-trait --test ui
 
   lint:
     name: Format and clippy
