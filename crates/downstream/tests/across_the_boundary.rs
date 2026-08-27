@@ -25,8 +25,8 @@ fn it_reaches_the_module_path_not_just_the_root() {
 /// macro expanded in, so they are worth exercising from a different one.
 #[test]
 fn the_borrowing_enums_cross_the_boundary_too() {
-    use downstream::shapes::{AnyShapeRef, match_any_shape_ref};
     use closed_trait::EnumerableRef;
+    use downstream::shapes::{AnyShapeRef, match_any_shape_ref};
 
     let square = Square { side: 3 };
     assert_eq!(match_any_shape_ref!(square.as_enum_ref(), s => s.area()), 9);
