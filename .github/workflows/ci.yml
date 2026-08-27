@@ -18,10 +18,10 @@ jobs:
       fail-fast: false
       matrix:
         # `beta` is a warning shot for changes coming to stable. It does not run
-        # the UI fixtures — those are pinned in the `ui` job below.
+        # the UI fixtures; those are pinned in the `ui` job below.
         rust: [stable, beta]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
@@ -37,14 +37,14 @@ jobs:
     env:
       TRYBUILD_UI: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.98.0"
           # `enumerate_needs_sized_types.stderr` quotes a snippet of `core`, and
           # rustc can only print that when the stdlib source is on disk. Without
           # this the note appears with its path but no code, and the fixture
-          # mismatches — a difference in environment, not in compiler version.
+          # mismatches. That is a difference in environment, not in compiler version.
           components: rust-src
       - uses: Swatinem/rust-cache@v2
       - run: cargo test -p closed-trait --test ui
@@ -53,7 +53,7 @@ jobs:
     name: Format and clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -67,7 +67,7 @@ jobs:
     env:
       RUSTDOCFLAGS: -D warnings
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo doc --workspace --no-deps
@@ -81,7 +81,7 @@ jobs:
       # compiles on the declared MSRV, not whether it is warning-free there.
       RUSTFLAGS: ""
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.85.0"
@@ -94,7 +94,7 @@ jobs:
     name: Package
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       # Builds both crates from inside their archives, which is what catches a
