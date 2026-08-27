@@ -12,7 +12,7 @@ categories = ["rust-patterns", "development-tools", "no-std", "no-std::no-alloc"
 description = "Seal a trait to a fixed set of types, and generate an enum and match macro over them"
 
 [dependencies]
-closed-trait-macros = { path = "../closed-trait-macros", version = "0.1.0" }
+closed-trait-macros = { path = "../closed-trait-macros", version = "0.1.1" }
 
 [dev-dependencies]
 trybuild = "1.0.119"

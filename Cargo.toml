@@ -11,7 +11,8 @@ repository = "https://github.com/ZwenDo/closed-trait"
 keywords = ["sealed", "trait", "macro", "enum", "match"]
 rust-version = "1.85.0"
 
-version = "0.1.0"
+# When bumping version, don't forget to also bump `crates/closed-trait/Cargo.toml`
+version = "0.1.1"
 
 [workspace.dependencies]
 # No `version`: a path-only dev-dependency is stripped when publishing, which is

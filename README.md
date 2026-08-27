@@ -1,10 +1,10 @@
 # closed-trait
 
-[![Crate version](https://img.shields.io/crates/v/closed-trait "Crate page")](https://crates.io/crates/closed-trait)
+[![Crate version](https://img.shields.io/crates/v/closed-trait.svg "Crate version")](https://crates.io/crates/closed-trait)
 [![Rust 1.85+](https://img.shields.io/badge/rustc-1.85+-blue.svg "Rust 1.85+")](https://blog.rust-lang.org/2025/02/20/Rust-1.85.0/)
 [![Rust docs](https://docs.rs/closed-trait/badge.svg "Rust docs")](https://docs.rs/closed-trait)
 
-Seal a trait to a fixed set of types, then generate things from that set.
+Seal a trait to a fixed set of types, and generate an enum and match macro over them.
 
 It provides sealing — only the listed types may implement the trait:
 
@@ -21,7 +21,7 @@ impl Shape for Circle {} // compile error: `Circle` is not permitted
 fn main() {}
 ```
 
-It also generates three enums — one owning, two borrowing — by adding one attribute above the trait:
+Adding one attribute above the trait also generates three enums — one owning, two borrowing:
 
 ```rust
 struct Square;
@@ -70,8 +70,8 @@ Note that `#[enumerate]` reads its type list from the `#[sealed(..)]` below it, 
 
 ## Why seal a trait?
 
-Sealing earns its place before any enum is generated. Some of a public trait is frozen the moment it ships whatever you
-do — its method signatures belong to every caller, and no seal changes that. What sealing frees is the other side: a
+Sealing earns its place before any enum is generated. Part of a public trait is frozen the moment it ships, whatever
+you do: its method signatures belong to every caller, and no seal changes that. What sealing frees is the other side: a
 trait anyone can implement cannot gain a required method or a new supertrait without breaking every implementation
 downstream, so its API can only ever grow by defaults. Seal it and no outside implementation exists, so both become
 ordinary changes — add them and just fix your own types.
@@ -104,9 +104,8 @@ without appearing as a variant, or a variant's inner type can drift out of the t
 word. And to run trait-generic code over the enum you end up adding `&dyn Trait` converters, which brings back
 everything above.
 
-This crate writes the list where a macro can read it. The trait stays a trait, the set is closed *and* known, and the
-list is checked in both directions — a listed type that does not implement the trait is a compile error, so the two
-cannot drift apart.
+The trait stays a trait, the set is closed *and* known, and the list is checked in both directions — a listed type that
+does not implement the trait is a compile error, so the two cannot drift apart.
 
 ## What you get
 
@@ -127,6 +126,11 @@ The match macro is the piece a plain `match` cannot replace: it hands the body t
 generic closures, so copying the body into every arm is the only way to have one body that still knows what it has.
 Being a `match` rather than a call, `return` and `?` in the body leave the enclosing function, the body may move
 anything it owns, and it can be `async`.
+
+The one thing it does not generate is an `impl Shape for AnyShape`, and that is deliberate — forwarding cannot always be
+written. A trait with an associated type, `type Bar; fn make(&self) -> Self::Bar`, has no single return type to give the
+enum, since every implementor picks its own. Per-arm bodies never face that, because nothing has to unify. And where
+forwarding does make sense, it is one line: `match_any_shape!(self, s => s.area())` in an inherent impl.
 
 ## Constraints
 
@@ -164,5 +168,5 @@ directly beside the sealed trait cannot opt a type in, which a single level of p
 
 ## License
 
-[MIT](https://www.github.com/ZwenDo/closed-trait/blob/main/LICENSE-MIT) or
-[Apache-2.0](https://www.github.com/ZwenDo/closed-trait/blob/main/LICENSE-APACHE), at your option.
+[MIT](https://github.com/ZwenDo/closed-trait/blob/main/LICENSE-MIT) or
+[Apache-2.0](https://github.com/ZwenDo/closed-trait/blob/main/LICENSE-APACHE), at your option.
