@@ -164,5 +164,5 @@ directly beside the sealed trait cannot opt a type in, which a single level of p
 
 ## License
 
-[MIT](https://www.github.com/ZwenDo/closed-trait/blob/LICENSE-MIT) or
-[Apache-2.0](https://www.github.com/ZwenDo/closed-trait/blob/LICENSE-APACHE), at your option.
+[MIT](https://www.github.com/ZwenDo/closed-trait/blob/main/LICENSE-MIT) or
+[Apache-2.0](https://www.github.com/ZwenDo/closed-trait/blob/main/LICENSE-APACHE), at your option.
