@@ -1,3 +1,4 @@
+use crate::util::{fresh, name_of};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::parse::{Parse, ParseStream, Parser};
@@ -84,7 +85,10 @@ impl Input {
         let (subject, shape, anonymous_bounds) = match named {
             Some(ident) => (ident, quote!(#annotation), None),
             None => {
-                let invented = fresh(signature);
+                // `T` unless the function declares one already: the probe declares
+                // this parameter and `get` declares the rest, so a name used twice
+                // would quietly swallow the function's own.
+                let invented = fresh(signature.generics.params.iter().map(name_of), "T");
                 let (rewritten, bounds) =
                     shape_of((**annotation).clone(), &invented).map_err(|_| {
                         syn::Error::new(
