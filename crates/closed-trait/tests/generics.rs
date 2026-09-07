@@ -126,3 +126,52 @@ fn the_borrow_finds_a_name_the_trait_has_not_spent() {
     assert_eq!(match_any_held_ref!(borrowed, p => p.first()), "x");
     assert_eq!(match_any_held_ref!(borrowed, p => p.second()), "y");
 }
+
+/// The assertion `#[sealed]` writes declares a parameter of its own to stand for
+/// the implementor. A trait that has already spent that name must not collide
+/// with it.
+mod crowded_types {
+    use super::*;
+
+    pub struct One<T>(pub T);
+    pub struct Two<A, B>(pub A, pub B);
+
+    // `S` is the name the assertion reaches for first.
+    #[sealed(One<S>)]
+    pub trait Held<S> {
+        fn held(&self) -> &S;
+    }
+
+    impl<S> Held<S> for One<S> {
+        fn held(&self) -> &S {
+            &self.0
+        }
+    }
+
+    // `S` and `S2` are both spent, so it has to reach further still.
+    #[sealed(Two<S, S2>)]
+    pub trait Paired<S, S2> {
+        fn left(&self) -> &S;
+        fn right(&self) -> &S2;
+    }
+
+    impl<S, S2> Paired<S, S2> for Two<S, S2> {
+        fn left(&self) -> &S {
+            &self.0
+        }
+        fn right(&self) -> &S2 {
+            &self.1
+        }
+    }
+}
+
+#[test]
+fn the_assertion_finds_a_name_the_trait_has_not_spent() {
+    use crowded_types::{Held, One, Paired, Two};
+
+    assert_eq!(*One(1u8).held(), 1);
+
+    let pair = Two(2u8, 'x');
+    assert_eq!(*pair.left(), 2);
+    assert_eq!(*pair.right(), 'x');
+}

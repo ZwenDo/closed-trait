@@ -5,7 +5,7 @@ use syn::{
 };
 
 use super::input::{Input, SealedType};
-use crate::util::{argument, lifetimes, mentions, name_of, render};
+use crate::util::{argument, fresh, lifetimes, mentions, name_of, render};
 
 pub(crate) fn expand(input: Input) -> TokenStream {
     let Input { mut item, types } = input;
@@ -254,10 +254,14 @@ fn assertion(item: &ItemTrait, types: &[SealedType]) -> Option<TokenStream> {
         return None;
     }
 
+    // Named around whatever the trait declares: `assert` sits inside the trait's
+    // own parameters, so a fixed name would collide with a trait that has one.
+    let probe = fresh(item.generics.params.iter().map(name_of), "S");
+
     Some(quote! {
         #[allow(dead_code)]
         const _: () = {
-            fn assert<#trait_params S: #ident #trait_arguments + ?Sized>(_: &S) {}
+            fn assert<#trait_params #probe: #ident #trait_arguments + ?Sized>(_: &#probe) {}
             #(#checks)*
         };
     })

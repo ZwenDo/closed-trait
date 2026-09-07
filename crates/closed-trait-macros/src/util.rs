@@ -128,6 +128,28 @@ pub(crate) fn snake_case(ident: &Ident) -> String {
     snake
 }
 
+/// `base` unless something in `taken` already answers to it, then `base2`,
+/// `base3`, and so on.
+///
+/// Generated items stand beside the ones a caller wrote, so a name chosen
+/// blindly can collide with theirs -- and a generic parameter that collides is
+/// refused at best and a silently shadowed type at worst.
+pub(crate) fn fresh(taken: impl IntoIterator<Item = String>, base: &str) -> Ident {
+    let taken: Vec<String> = taken.into_iter().collect();
+    let span = proc_macro2::Span::call_site();
+    if !taken.iter().any(|name| name == base) {
+        return Ident::new(base, span);
+    }
+    let mut suffix = 2;
+    loop {
+        let candidate = format!("{base}{suffix}");
+        if !taken.contains(&candidate) {
+            return Ident::new(&candidate, span);
+        }
+        suffix += 1;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,5 +222,20 @@ mod tests {
         assert_eq!(render(&argument(&parse_quote!(T: Clone + Send))), "T");
         assert_eq!(render(&argument(&parse_quote!('a))), "'a");
         assert_eq!(render(&argument(&parse_quote!(const N: usize))), "N");
+    }
+
+    #[test]
+    fn fresh_takes_the_base_when_nothing_holds_it() {
+        assert_eq!(fresh(Vec::new(), "S").to_string(), "S");
+        assert_eq!(fresh(vec!["T".to_owned()], "S").to_string(), "S");
+    }
+
+    #[test]
+    fn fresh_counts_past_every_name_already_held() {
+        let taken = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<Vec<_>>();
+        assert_eq!(fresh(taken(&["S"]), "S").to_string(), "S2");
+        assert_eq!(fresh(taken(&["S", "S2"]), "S").to_string(), "S3");
+        // Gaps are not filled: it counts up from the base rather than hunting.
+        assert_eq!(fresh(taken(&["S", "S3"]), "S").to_string(), "S2");
     }
 }
