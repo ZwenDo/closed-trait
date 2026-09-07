@@ -71,9 +71,9 @@ use proc_macro::TokenStream;
 /// struct Keyed<T>(pub T);
 ///
 /// #[sealed(
-///   Plain: Store<i32>,        // implements the trait at one instantiation
-///   Boxed<T>,                 // the identity mapping needs no annotation
-///   Keyed<T>: Store<Vec<T>>,  // generic, but not the identity mapping
+///     Plain: Store<i32>,        // implements the trait at one instantiation
+///     Boxed<T>,                 // the identity mapping needs no annotation
+///     Keyed<T>: Store<Vec<T>>,  // generic, but not the identity mapping
 /// )]
 /// trait Store<T> {}
 ///
@@ -138,9 +138,10 @@ use proc_macro::TokenStream;
 ///
 /// impl Shape for a::Foo {}
 /// impl Shape for b::Foo {}
-/// fn main() {
-///   let _ = AnyShape::Left(a::Foo); // see enumerate
-/// }
+///
+/// # fn main() {
+/// let _ = AnyShape::Left(a::Foo); // see enumerate
+/// # }
 /// ```
 ///
 /// **The same type listed twice**, which is how one type reaches the enum at more than one
@@ -161,11 +162,11 @@ use proc_macro::TokenStream;
 /// impl Store<f64> for Plain {}
 /// impl<T> Store<T> for Boxed<T> {}
 ///
-/// fn main() {
-///     // the one type reaching two different enum instantiations
-///     assert!(matches!(Plain.into_enum(), AnyStore::<i32>::Plain(_)));
-///     assert!(matches!(Plain.into_enum(), AnyStore::<f64>::PlainF64(_)));
-/// }
+/// # fn main() {
+/// // the one type reaching two different enum instantiations
+/// assert!(matches!(Plain.into_enum(), AnyStore::<i32>::Plain(_)));
+/// assert!(matches!(Plain.into_enum(), AnyStore::<f64>::PlainF64(_)));
+/// # }
 /// ```
 ///
 /// The name settles the *variant* only. The two entries must also pin different arguments, and
@@ -183,7 +184,7 @@ use proc_macro::TokenStream;
 /// struct Foo<'a, T>(&'a T);
 ///
 /// #[sealed(
-///   for<'a, T> Foo<'a, T> as Bar: Dummy<i32>
+///     for<'a, T> Foo<'a, T> as Bar: Dummy<i32>
 /// )]
 /// trait Dummy<X> {}
 ///
@@ -264,12 +265,12 @@ pub fn sealed(args: TokenStream, item: TokenStream) -> TokenStream {
 /// impl Shape for Square {}
 /// impl Shape for Circle {}
 ///
-/// fn  main() {
-///  let shape: AnyShape = Square.into_enum();
-///  match shape {
-///    AnyShape::Square(_) => {},
-///    AnyShape::Circle(_) => {},
-///  }
+/// # fn main() {
+/// let shape: AnyShape = Square.into_enum();
+/// match shape {
+///     AnyShape::Square(_) => {},
+///     AnyShape::Circle(_) => {},
+/// # }
 /// }
 /// ```
 ///
@@ -323,11 +324,11 @@ pub fn sealed(args: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// impl Shape for Square {}
 ///
-/// fn main() {
-///   let mut owned: Shapes        = Shapes::Square(Square);
-///   let mutable:   ShapesMut<'_> = owned.as_mut();
-///   let reference: ShapeView<'_> = mutable.as_ref();
-/// }
+/// # fn main() {
+/// let mut owned: Shapes        = Shapes::Square(Square);
+/// let mutable:   ShapesMut<'_> = owned.as_mut();
+/// let reference: ShapeView<'_> = mutable.as_ref();
+/// # }
 /// ```
 ///
 /// ## `no_bridge`
@@ -403,11 +404,11 @@ pub fn sealed(args: TokenStream, item: TokenStream) -> TokenStream {
 /// # impl Shape for Square { fn area(&self) -> i32 { self.side * self.side } }
 /// # impl Shape for Circle { fn area(&self) -> i32 { 3 * self.radius * self.radius } }
 ///
-/// fn main() {
-///  let shape = AnyShape::from(Square { side: 3 });
-///  let area = match_any_shape!(shape, s => s.area());
-///  assert_eq!(9, area);
-/// }
+/// # fn main() {
+/// let shape = AnyShape::from(Square { side: 3 });
+/// let area = match_any_shape!(shape, s => s.area());
+/// assert_eq!(9, area);
+/// # }
 /// ```
 ///
 /// The value may be given by `&`, by `&mut` or by value; match ergonomics make
@@ -426,12 +427,12 @@ pub fn sealed(args: TokenStream, item: TokenStream) -> TokenStream {
 /// # impl Shape for Square { fn area(&self) -> i32 { self.side * self.side } }
 /// # impl Shape for Circle { fn area(&self) -> i32 { 3 * self.radius * self.radius } }
 /// fn first_greater(shapes: &[AnyShape], value: i32) -> Option<i32> {
-///   for shape in shapes {
-///     // `return` leaves `first_big`, which a method taking the body could
-///     // never do
-///     match_any_shape!(shape, s => if s.area() > value { return Some(s.area()) });
-///   }
-///   None
+///     for shape in shapes {
+///         // `return` leaves `first_big`, which a method taking the body could
+///         // never do
+///         match_any_shape!(shape, s => if s.area() > value { return Some(s.area()) });
+///     }
+///     None
 /// }
 ///
 /// # fn main() {}
@@ -511,9 +512,9 @@ pub fn sealed(args: TokenStream, item: TokenStream) -> TokenStream {
 /// impl<T> Store<T> for Boxed<T> {}
 /// impl<T> Store<T> for Listed<T> {}
 ///
-/// fn main() {
-///     let _: AnyStore<u8> = Listed(vec![]).into();
-/// }
+/// # fn main() {
+/// let _: AnyStore<u8> = Listed(vec![]).into();
+/// # }
 /// ```
 ///
 /// The enum is generic over the parameters its *variants* use, not over the trait's. An enum
@@ -531,9 +532,9 @@ pub fn sealed(args: TokenStream, item: TokenStream) -> TokenStream {
 /// impl Value<i32> for i32 {}
 /// impl Value<f64> for f64 {}
 ///
-/// fn main() {
-///     let _: AnyValue = AnyValue::i32(6);
-/// }
+/// # fn main() {
+/// let _: AnyValue = AnyValue::i32(6);
+/// # }
 /// ```
 ///
 /// An entry that names no parameter the enum is generic over cannot produce a single enum type, and
@@ -560,9 +561,9 @@ pub fn sealed(args: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// impl Store<i32> for Plain {}
 ///
-/// fn main() {
-///     let _: AnyStore = Plain.into_enum();
-/// }
+/// # fn main() {
+/// let _: AnyStore = Plain.into_enum();
+/// # }
 /// ```
 ///
 /// On the way *out* it costs the macro. Nothing stops the trait from being *named* at an
