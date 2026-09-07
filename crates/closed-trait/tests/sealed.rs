@@ -330,3 +330,40 @@ fn an_entry_permits_only_the_instantiation_it_names() {
     assert_eq!(Boxed(2u8).size(), 1);
     assert_eq!(Boxed(3.5f64).size(), 8);
 }
+
+/// An entry may name the trait's own parameters in its instantiation. That is how
+/// a type which is not generic says it implements at every one of them, since it
+/// has nowhere else to name them.
+mod every_instantiation {
+    use closed_trait::sealed;
+
+    #[sealed(Plain: Store<X>, Pinned: Store<i32>)]
+    pub trait Store<X> {
+        fn size(&self) -> usize;
+    }
+
+    pub struct Plain;
+    pub struct Pinned;
+
+    impl<X> Store<X> for Plain {
+        fn size(&self) -> usize {
+            1
+        }
+    }
+
+    impl Store<i32> for Pinned {
+        fn size(&self) -> usize {
+            2
+        }
+    }
+}
+
+#[test]
+fn an_entry_may_name_the_traits_parameters_in_its_instantiation() {
+    use every_instantiation::{Pinned, Plain, Store};
+
+    // `Plain` is permitted at every instantiation, `Pinned` at one.
+    assert_eq!(Store::<i32>::size(&Plain), 1);
+    assert_eq!(Store::<f64>::size(&Plain), 1);
+    assert_eq!(Store::<i32>::size(&Pinned), 2);
+}

@@ -158,9 +158,19 @@ fn params(entry: &SealedType, item: &ItemTrait) -> Vec<(String, TokenStream)> {
         if declared(&params, &name) {
             continue;
         }
+        // An annotated instantiation names them as readily as the type does.
+        // `Foo: Store<X>` says `Foo` implements the trait at every `X`, so `X`
+        // is a parameter of the impl and of the check, though `Foo` is not
+        // generic and can name nothing itself.
         let used = match param {
             GenericParam::Lifetime(param) => named.contains(&param.lifetime.ident),
-            GenericParam::Type(_) | GenericParam::Const(_) => mentions(ty, &name),
+            GenericParam::Type(_) | GenericParam::Const(_) => {
+                mentions(ty, &name)
+                    || entry
+                        .instantiation
+                        .as_ref()
+                        .is_some_and(|path| mentions(path, &name))
+            }
         };
         if used {
             params.push((name, quote!(#param)));
