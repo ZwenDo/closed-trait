@@ -11,7 +11,7 @@ env:
 
 jobs:
   test:
-    name: Test (${{ matrix.rust }})
+    name: test-${{ matrix.rust }}
     runs-on: ubuntu-latest
     continue-on-error: ${{ matrix.rust == 'beta' }}
     strategy:
@@ -32,7 +32,7 @@ jobs:
     # trybuild fixtures record rustc's exact wording, so they run on one pinned
     # version. Bumping it means regenerating them:
     #   TRYBUILD=overwrite TRYBUILD_UI=1 cargo test -p closed-trait --test ui
-    name: UI fixtures (rustc 1.98.0)
+    name: ui
     runs-on: ubuntu-latest
     env:
       TRYBUILD_UI: "1"
@@ -50,7 +50,7 @@ jobs:
       - run: cargo test -p closed-trait --test ui
 
   lint:
-    name: Format and clippy
+    name: lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -62,7 +62,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets
 
   docs:
-    name: Rustdoc
+    name: docs
     runs-on: ubuntu-latest
     env:
       RUSTDOCFLAGS: -D warnings
@@ -73,12 +73,15 @@ jobs:
       - run: cargo doc --workspace --no-deps
 
   msrv:
-    name: MSRV 1.85.0
+    name: msrv
     runs-on: ubuntu-latest
     env:
       # Not `-D warnings`: 1.85 fires `unused_macro_definition` on generated
       # macros that stable does not. This job asks whether the crate still
       # compiles on the declared MSRV, not whether it is warning-free there.
+      # Written out rather than left blank: an `env:` holding only comments is
+      # empty, so the workflow's own `-D warnings` would reach here unopposed.
+      RUSTFLAGS: ""
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
@@ -90,7 +93,7 @@ jobs:
       - run: cargo check --workspace --all-targets
 
   package:
-    name: Package
+    name: package
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
