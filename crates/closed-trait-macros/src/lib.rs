@@ -3,6 +3,7 @@
 //!
 //! [`closed-trait`]: https://docs.rs/closed-trait
 mod enumerate;
+mod implements;
 mod sealed;
 mod util;
 
@@ -618,4 +619,254 @@ pub fn sealed(args: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn enumerate(args: TokenStream, item: TokenStream) -> TokenStream {
     enumerate::enumerate(args, item)
+}
+
+/// Generates a macro that instantiates the attributed function for a type, when that type satisfies
+/// the bounds on the function's first parameter.
+///
+/// The macro is named after the function, with a `try_` prefix: `describe` gets `try_describe!`,
+/// `parse` gets `try_parse!`. `name = ".."` gives it another name. It takes an expression, tests
+/// its type, and returns `Some` of an[`Fn`] for that instantiation or `None`. Nothing is moved and
+/// nothing runs until that `Fn` is called, which may happen more than once:
+///
+/// ```
+/// # use closed_trait::if_implements_fn;
+/// # use std::fmt::Display;
+/// #[if_implements_fn]
+/// fn into_i32_plus_one(v: impl Into<i32>) -> i32 {
+///     v.into() + 1
+/// }
+///
+/// # fn main() {
+/// let n = 7u8;
+/// match try_into_i32_plus_one!(n) {
+///     Some(f) => assert_eq!(f(n), 8),
+///     None => unreachable!("u8 implements Into<i32>"),
+/// }
+///
+/// let s = "hello";
+/// match try_into_i32_plus_one!(s) {
+///     Some(_) => unreachable!("&str does not implement Into<i32>"),
+///     None => {},
+/// }
+/// # }
+/// ```
+///
+/// # The annotated function
+///
+/// The first parameter is the one tested, and its type is written in one of two ways:
+///
+/// ```
+/// # use closed_trait::if_implements_fn;
+/// # use std::fmt::Debug;
+/// #[if_implements_fn]
+/// fn named<T: Debug>(v: &T) {
+///     println!("{v:?}");
+/// }
+///
+/// #[if_implements_fn]
+/// fn anonymous(v: &impl Debug) {
+///     println!("{v:?}");
+/// }
+/// # fn main() {}
+/// ```
+///
+/// Both test the same thing: the bounds written on that parameter (here `Debug`). Bounds on any
+/// other parameter are not tested.
+///
+/// Everything else the signature says is the compiler's to check rather than this macro's, so
+/// lifetimes, `where` clauses, further parameters and `async` all work as they do on any function.
+/// What is refused is:
+///
+/// - a method, since the macro sits beside the function and a `macro_rules!` cannot be defined in
+///   an `impl` or a `trait`;
+/// - a function with no parameters, there being nothing to test;
+/// - an `unsafe fn`, whose unsafety the safe call would hide;
+/// - an explicit ABI, which the ordinary call would belie;
+/// - anything that would not be a valid function without the attribute, which the compiler reports
+///   as it always would.
+///
+/// A `const fn` is accepted and keeps its constness, since it is emitted as written. The macro's
+/// own path is not const (what it hands back is an `Fn` called at run time), so the macro cannot be
+/// used in a const context.
+///
+/// The macro calls the function rather than carrying a copy of its body, which is what makes its
+/// paths resolve at the *call site*: the function itself, and the traits its bounds name, have to
+/// be in scope there.
+///
+/// # Type and const arguments
+///
+/// The parameters the function declares besides the first can be given after a `;`, in declaration
+/// order, or left to inference as they would be at any other call:
+///
+/// ```
+/// # use closed_trait::if_implements_fn;
+/// # use std::fmt::Debug;
+/// #[if_implements_fn]
+/// fn function<T, const N: usize>(_: impl Debug) {}
+///
+/// # fn main() {
+/// // `T` and `N` are named nowhere in the signature, so nothing can infer them.
+/// try_function!("a"; String, 7);
+/// # }
+/// ```
+///
+/// The list is handed to a turbofish as written, so `_` and const arguments work as they do there,
+/// `try_function!("a"; String, { 3 + 4 })` included.
+///
+/// # Options
+///
+/// Each is a `key = "value"` pair, written in any order, and written at most once unless said
+/// otherwise.
+///
+/// ## Visibility
+///
+/// `vis = ".."` gives the macro a visibility of its own, written as it would be on any item. Left
+/// out, it takes the function's, capped at the crate: a `pub` function gets a `pub(crate)` macro,
+/// and anything narrower keeps what it has.
+///
+/// ```
+/// # use closed_trait::if_implements_fn;
+/// # use std::fmt::Debug;
+/// #[if_implements_fn(vis = "pub(self)")]
+/// pub fn print_debug<T: Debug>(v: &T) {
+///     println!("{v:?}");
+/// }
+/// # fn main() {}
+/// ```
+///
+/// **`vis = "pub"` is the one value refused: the macro does not leave the crate, however public the
+/// function is.** A `macro_rules!` leaves its crate only through `#[macro_export]`, and that plants
+/// its name in the crate *root* rather than in the module it was written in, while the expansion
+/// still calls the function by the name it was written under.
+///
+/// ```
+/// mod private {
+///     pub fn not_pub() {}
+/// }
+/// # fn main() {}
+/// ```
+///
+/// The `pub` on the function above is meaningless, since its enclosing module is private. Exporting
+/// its macro would make that reachable from any crate while `not_pub` stays unreachable outside its
+/// module. An attribute is handed the item alone and never its surroundings, so there is no way to
+/// detect this, and for that reason exporting is not allowed at all.
+///
+/// ## Naming
+///
+/// `name = ".."` replaces the `try_` prefix outright, for a function whose macro reads badly under it
+/// or whose name is already taken:
+///
+/// ```
+/// # use closed_trait::if_implements_fn;
+/// # use std::fmt::Debug;
+/// #[if_implements_fn(name = "debug_if_possible")]
+/// pub fn print_debug<T: Debug>(v: &T) {
+///     println!("{v:?}");
+/// }
+/// # fn main() {}
+/// ```
+///
+/// # In a generic function
+///
+/// The bounds are tested against what the expression's type is *known* to be where the macro is
+/// written. Inside a generic function that is whatever the function declares, and not what it is
+/// later called with:
+///
+/// ```
+/// # use closed_trait::if_implements_fn;
+/// # use std::fmt::Display;
+/// #[if_implements_fn]
+/// fn show(v: impl Display) -> String {
+///     format!("{v}")
+/// }
+///
+/// fn unbounded<T>(v: T) -> bool {
+///     try_show!(v).is_some()
+/// }
+///
+/// fn bounded<T: Display>(v: T) -> bool {
+///     try_show!(v).is_some()
+/// }
+///
+/// # fn main() {
+/// assert!(!unbounded(6u8)); // `u8` is `Display`, but `T` is not
+/// assert!(bounded(6u8));
+/// # }
+/// ```
+///
+/// `unbounded` answers `None` for every `T`, `u8` included: nothing there says `T: Display`, so the
+/// test cannot hold. Declaring the bound is what makes it hold, and once it is declared the call
+/// could be written directly. So this is for a call site that knows the type concretely.
+///
+/// # Rationale
+///
+/// On its own the macro is rarely useful, since whether the tested type implements the given bounds
+/// is decided statically: most of the time the whole mechanism folds into either the direct call,
+/// when they hold, or nothing when they do not.
+///
+/// What it really buys is a call that can be written safely where the first argument (the one whose
+/// type is tested) may not have the right type. That is especially useful inside a
+/// [`match_any`][macro@enumerate] invocation, where the expression assumes several distinct types.
+///
+/// It is what lets that call be written once, inside the arm:
+///
+/// ```
+/// # use closed_trait::{enumerate, if_implements_fn, sealed};
+/// # use closed_trait::Enumerable;
+/// # use std::fmt::Debug;
+/// # #[derive(Debug)]
+/// # struct ImplDebug;
+/// # struct NotDebug;
+/// #[enumerate(match_any)]
+/// #[sealed(ImplDebug, NotDebug)]
+/// trait MyTrait {}
+/// # impl MyTrait for ImplDebug {}
+/// # impl MyTrait for NotDebug {}
+///
+/// #[if_implements_fn]
+/// fn print_debug(e: impl Debug) {
+///     println!("{e:?}");
+/// }
+///
+/// # fn main() {
+/// let v = ImplDebug.into_enum();
+/// match_any_my_trait!(v, v => {
+///     if let Some(f) = try_print_debug!(v) {
+///         f(v);
+///     }
+/// });
+/// # }
+/// ```
+///
+/// Written by hand, the same call does not compile:
+///
+/// ```compile_fail
+/// # use closed_trait::{enumerate, if_implements_fn, sealed};
+/// # use closed_trait::Enumerable;
+/// # use std::fmt::Debug;
+/// # #[derive(Debug)]
+/// # struct ImplDebug;
+/// # struct NotDebug;
+/// # #[enumerate(match_any)]
+/// # #[sealed(ImplDebug, NotDebug)]
+/// # trait MyTrait {}
+/// # impl MyTrait for ImplDebug {}
+/// # impl MyTrait for NotDebug {}
+/// # fn print_debug(e: impl Debug) {
+/// #     println!("{e:?}");
+/// # }
+/// # fn main() {
+/// let v = ImplDebug.into_enum();
+/// match_any_my_trait!(v, v => {
+///     print_debug(v); // compile error: NotDebug does not implement the Debug trait
+/// });
+/// # }
+/// ```
+///
+/// That can be fixed by not calling `print_debug` on `NotDebug`, but only by writing the whole
+/// match out, which grows tedious once the enum has dozens of variants.
+#[proc_macro_attribute]
+pub fn if_implements_fn(args: TokenStream, item: TokenStream) -> TokenStream {
+    implements::if_implements_attribute(args, item)
 }

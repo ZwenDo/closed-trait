@@ -1,0 +1,5 @@
+error: `name` is written twice
+ --> tests/ui/if_implements_fn_duplicate_name.rs:4:34
+  |
+4 | #[if_implements_fn(name = "one", name = "two")]
+  |                                  ^^^^

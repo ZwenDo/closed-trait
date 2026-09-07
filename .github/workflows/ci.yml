@@ -79,7 +79,6 @@ jobs:
       # Not `-D warnings`: 1.85 fires `unused_macro_definition` on generated
       # macros that stable does not. This job asks whether the crate still
       # compiles on the declared MSRV, not whether it is warning-free there.
-      RUSTFLAGS: ""
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master

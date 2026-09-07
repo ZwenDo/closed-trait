@@ -1,0 +1,5 @@
+error: an explicit ABI cannot be used here: the body is called as an ordinary function, so the ABI would say something that is not true of the call
+ --> tests/ui/if_implements_fn_rejects_abi.rs:5:1
+  |
+5 | extern "C" fn describe(value: impl Display) -> String {
+  | ^^^^^^

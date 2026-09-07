@@ -1,7 +1,7 @@
 #![doc = include_str!("../README.md")]
 #![no_std]
 
-pub use closed_trait_macros::{enumerate, sealed};
+pub use closed_trait_macros::{enumerate, if_implements_fn, sealed};
 
 /// A type that can be turned into the enum of its sealed trait.
 ///
