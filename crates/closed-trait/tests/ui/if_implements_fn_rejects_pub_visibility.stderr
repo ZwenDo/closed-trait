@@ -1,0 +1,5 @@
+error: `vis = "pub"` is not currently supported: the macro's visibility ranges from `"pub(self)"` to `"pub(crate)"`
+ --> tests/ui/if_implements_fn_rejects_pub_visibility.rs:4:26
+  |
+4 | #[if_implements_fn(vis = "pub")]
+  |                          ^^^^^

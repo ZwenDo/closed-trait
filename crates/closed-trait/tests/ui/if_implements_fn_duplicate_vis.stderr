@@ -1,0 +1,5 @@
+error: `vis` is written twice
+ --> tests/ui/if_implements_fn_duplicate_vis.rs:4:39
+  |
+4 | #[if_implements_fn(vis = "pub(self)", vis = "pub(crate)")]
+  |                                       ^^^
