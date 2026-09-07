@@ -64,7 +64,7 @@ fn mismatched_instantiations(types: &[SealedType], item: &ItemTrait) -> Result<(
 ///
 /// Leaving it to inference nearly works: it finds the answer when there is a
 /// single impl, and reports a missing one. But a type implementing the trait
-/// at several instantiations gives `E0283: type annotations needed`, spanned on
+/// at several instantiations gives "type annotations needed", spanned on
 /// a generated function the caller never wrote. Refusing here costs one
 /// annotation and says what to write.
 fn unpinned_entries(types: &[SealedType], item: &ItemTrait) -> Result<()> {

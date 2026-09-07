@@ -234,7 +234,7 @@ pub(crate) fn expand(input: Input) -> TokenStream {
     // Named for what it does rather than for the function, since it hands back a
     // function to call rather than calling one. Its own name also lets it be
     // re-exported as it stands: `use #name;` would name every namespace at once and
-    // collide with the function itself (`E0255`).
+    // collide with the function itself.
 
     // Written here rather than on the alias: an editor resolves the invocation to
     // the `macro_rules!` and reads the documentation from there, and would find

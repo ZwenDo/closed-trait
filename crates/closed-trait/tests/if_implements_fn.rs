@@ -168,7 +168,7 @@ mod visibility {
 }
 
 /// The pattern `#[macro_export]` could not support: one name in the crate root
-/// per function means these two would collide there (`E0428`).
+/// per function means these two would collide there.
 mod json {
     use super::*;
 

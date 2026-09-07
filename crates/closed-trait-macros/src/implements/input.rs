@@ -171,34 +171,6 @@ pub(crate) fn mentions(tokens: TokenStream, ident: &Ident) -> bool {
     })
 }
 
-/// A name for the first parameter's type where the annotation gives none, taken
-/// from the same alphabet a signature would use.
-///
-/// `T` unless the function declares one already, since the two stand side by
-/// side: the probe declares this one, `get` declares the rest, and a name used
-/// twice would quietly swallow the function's own. Nothing else in the expansion
-/// needs guarding, the function's body being elsewhere.
-fn fresh(signature: &syn::Signature) -> Ident {
-    let declared: Vec<&Ident> = signature
-        .generics
-        .params
-        .iter()
-        .filter_map(|param| match param {
-            GenericParam::Lifetime(_) => None,
-            GenericParam::Type(ty) => Some(&ty.ident),
-            GenericParam::Const(constant) => Some(&constant.ident),
-        })
-        .collect();
-    let span = proc_macro2::Span::call_site();
-    let mut candidate = Ident::new("T", span);
-    let mut suffix = 1;
-    while declared.contains(&&candidate) {
-        suffix += 1;
-        candidate = Ident::new(&format!("T{suffix}"), span);
-    }
-    candidate
-}
-
 /// The attribute's options, `vis = ..` and `name = ..`, in any order and each
 /// written at most once.
 #[derive(Default)]
@@ -298,7 +270,7 @@ fn check(item: &ItemFn) -> syn::Result<()> {
     // as written, so a direct call is still const, and only the macro's path is not.
     // What that path hands back is an `Fn` called at run time, so nothing here needs
     // to be const -- which is as well, since the fallback is a trait method and those
-    // cannot be (`E0379`).
+    // cannot be.
     if let syn::Safety::Unsafe(unsafety) = signature.safety {
         return Err(syn::Error::new(
             unsafety.span(),

@@ -171,7 +171,7 @@ use proc_macro::TokenStream;
 ///
 /// The name settles the *variant* only. The two entries must also pin different arguments, and
 /// some entry (`Boxed<T>` here) has to *mention* `T`. The enum is generic over the parameters
-/// its variants use, not over the trait's: an enum declaring one no variant uses is `E0392`. With
+/// its variants use, not over the trait's, since an enum may not declare one no variant uses. With
 /// every entry pinned there would be no `AnyStore<T>` at all, both entries would land in the same
 /// `AnyStore`, and `enumerate` would refuse it.
 ///
@@ -518,7 +518,7 @@ pub fn sealed(args: TokenStream, item: TokenStream) -> TokenStream {
 /// ```
 ///
 /// The enum is generic over the parameters its *variants* use, not over the trait's. An enum
-/// declaring one that no variant uses is `E0392`, so a list whose every entry fixes its arguments
+/// declaring one that no variant uses is refused, so a list whose every entry fixes its arguments
 /// produces a plain enum rather than a generic one.
 ///
 /// ```
