@@ -3,8 +3,8 @@ use quote::{format_ident, quote};
 use syn::ext::IdentExt;
 use syn::parse::{ParseStream, Parser};
 use syn::{
-    Attribute, Error, GenericParam, Ident, ItemTrait, LitStr, Path, PathArguments, Result, Token,
-    Type, parse_quote,
+    Attribute, Error, GenericParam, Ident, ItemTrait, LitStr, Meta, Path, PathArguments, Result,
+    Token, Type, parse_quote,
 };
 
 use crate::sealed::{self, SealedType};
@@ -421,11 +421,28 @@ fn sealed_types(item: &ItemTrait) -> Result<Vec<SealedType>> {
         )
     })?;
 
-    parse_sealed(attr)
+    // An empty seal is a trait nothing may implement, which `#[sealed]` allows.
+    // There is no enum to make from it: one with no variants could be neither
+    // constructed nor matched, and the borrowing pair could not even declare the
+    // lifetime they carry.
+    match parse_sealed(attr)? {
+        types if types.is_empty() => Err(Error::new_spanned(
+            attr,
+            "`#[enumerate]` needs at least one type to make an enum from, and this \
+             `#[sealed(..)]` lists none",
+        )),
+        types => Ok(types),
+    }
 }
 
 fn parse_sealed(attr: &Attribute) -> Result<Vec<SealedType>> {
-    Ok(sealed::Args::parse(attr.meta.require_list()?.tokens.clone())?.types)
+    // `#[sealed]` written bare is an empty list rather than a malformed one, so
+    // the arguments are only required to parse when they are there at all.
+    let tokens = match &attr.meta {
+        Meta::Path(_) => TokenStream::new(),
+        meta => meta.require_list()?.tokens.clone(),
+    };
+    Ok(sealed::Args::parse(tokens)?.types)
 }
 
 /// The enum's parameters: those of the trait that at least one entry names.

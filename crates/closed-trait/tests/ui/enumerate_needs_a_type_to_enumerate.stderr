@@ -1,0 +1,5 @@
+error: `#[enumerate]` needs at least one type to make an enum from, and this `#[sealed(..)]` lists none
+ --> tests/ui/enumerate_needs_a_type_to_enumerate.rs:4:1
+  |
+4 | #[sealed]
+  | ^^^^^^^^^

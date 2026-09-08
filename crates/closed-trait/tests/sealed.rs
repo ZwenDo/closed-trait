@@ -367,3 +367,26 @@ fn an_entry_may_name_the_traits_parameters_in_its_instantiation() {
     assert_eq!(Store::<f64>::size(&Plain), 1);
     assert_eq!(Store::<i32>::size(&Pinned), 2);
 }
+
+/// A list may be empty: the trait is then sealed against everything, which is
+/// what a list looks like before it has been filled in.
+///
+/// Nothing can satisfy either bound, so there is nothing to call and nothing to
+/// assert at run time -- that this module compiles is the whole of it. The
+/// refusals live in `tests/ui`: an implementor, and `#[enumerate]` over a list
+/// with no types.
+mod nothing_permitted {
+    use closed_trait::sealed;
+
+    #[sealed]
+    pub trait Bare {}
+
+    #[sealed()]
+    pub trait Parenthesised {}
+
+    // Still traits, and still usable as a bound.
+    #[allow(dead_code)]
+    fn bare<T: Bare>(_: T) {}
+    #[allow(dead_code)]
+    fn parenthesised<T: Parenthesised>(_: T) {}
+}

@@ -1,4 +1,4 @@
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::TokenStream;
 use syn::parse::{ParseStream, Parser};
 use syn::{Error, GenericParam, Generics, Ident, ItemTrait, Path, Result, Token, Type};
 
@@ -189,14 +189,9 @@ impl Args {
         let parser = |stream: ParseStream| parse_args(stream, &mut types);
         parser.parse2(args)?;
 
-        if types.is_empty() {
-            return Err(Error::new(
-                Span::call_site(),
-                "`#[sealed(..)]` needs the types allowed to implement the trait, \
-                 as in `#[sealed(Square, crate::Circle)]`",
-            ));
-        }
-
+        // An empty list is a trait nothing may implement, which is a seal like any
+        // other and the state a list is in before it has been filled. `#[enumerate]`
+        // refuses it separately, having no variants to make an enum from.
         Ok(Args { types })
     }
 }
@@ -326,8 +321,9 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_list_is_refused() {
-        assert!(refused(quote!(), plain()).contains("needs the types allowed"));
+    fn an_empty_list_seals_the_trait_against_everything() {
+        let args = Args::parse(quote!()).expect("an empty list parses");
+        assert!(args.types.is_empty());
     }
 
     #[test]
