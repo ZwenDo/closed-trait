@@ -107,7 +107,7 @@ mod binders {
     // Here `'a` is the trait's own, so it needs no binder, and means
     // something different: this seal is tied to the trait's lifetime rather
     // than quantified over every one.
-    #[sealed(Slice<'a>)]
+    #[sealed(for<'a> Slice<'a>: Quoted<'a>)]
     pub trait Quoted<'a> {
         fn quoted(&self) -> String;
     }
@@ -241,7 +241,7 @@ mod shared_type_distinct_enums {
     use closed_trait::{enumerate, sealed};
 
     #[enumerate]
-    #[sealed(Plain: Keep<i32>, Plain as PlainF64: Keep<f64>, Boxed<T>)]
+    #[sealed(Plain: Keep<i32>, Plain as PlainF64: Keep<f64>, for<T> Boxed<T>: Keep<T>)]
     pub trait Keep<T> {}
 
     pub struct Plain;
@@ -300,7 +300,7 @@ fn an_entry_may_use_every_part_at_once() {
 mod precise {
     use closed_trait::sealed;
 
-    #[sealed(Plain: Store<i32>, Boxed<T>)]
+    #[sealed(Plain: Store<i32>, for<T> Boxed<T>: Store<T>)]
     pub trait Store<T> {
         fn size(&self) -> usize;
     }
@@ -337,7 +337,7 @@ fn an_entry_permits_only_the_instantiation_it_names() {
 mod every_instantiation {
     use closed_trait::sealed;
 
-    #[sealed(Plain: Store<X>, Pinned: Store<i32>)]
+    #[sealed(for<X> Plain: Store<X>, Pinned: Store<i32>)]
     pub trait Store<X> {
         fn size(&self) -> usize;
     }
@@ -366,6 +366,74 @@ fn an_entry_may_name_the_traits_parameters_in_its_instantiation() {
     assert_eq!(Store::<i32>::size(&Plain), 1);
     assert_eq!(Store::<f64>::size(&Plain), 1);
     assert_eq!(Store::<i32>::size(&Pinned), 2);
+}
+
+/// A binder's parameter may sit inside a larger type in the instantiation, the
+/// arguments there being ordinary types. The entry then maps `Keyed<T>` to
+/// `Store<Vec<T>>` rather than to `Store<T>`.
+mod nested_instantiation {
+    use closed_trait::sealed;
+
+    #[sealed(for<T> Keyed<T>: Store<Vec<T>>)]
+    pub trait Store<X> {
+        fn size(&self) -> usize;
+    }
+
+    pub struct Keyed<T>(pub T);
+
+    impl<T> Store<Vec<T>> for Keyed<T> {
+        fn size(&self) -> usize {
+            1
+        }
+    }
+}
+
+#[test]
+fn an_instantiation_may_nest_a_binders_parameter() {
+    use nested_instantiation::{Keyed, Store};
+
+    // The seal is at `Store<Vec<i32>>`, which is what the entry named, not at
+    // `Store<i32>`.
+    assert_eq!(Store::<Vec<i32>>::size(&Keyed(1i32)), 1);
+}
+
+/// A binder on a trait with no parameters of its own, which is the only way to
+/// seal a generic type there: `Boxed<T>` is permitted at every `T`, and the
+/// bound on `Shown`'s binder is part of what is sealed.
+mod generic_type {
+    use closed_trait::sealed;
+    use core::fmt::Debug;
+
+    pub struct Boxed<T>(pub T);
+    pub struct Shown<T>(pub T);
+    pub struct NotDebug;
+
+    #[sealed(for<T> Boxed<T>, for<T: Debug> Shown<T>)]
+    pub trait Shape {
+        fn describe(&self) -> &'static str;
+    }
+
+    impl<T> Shape for Boxed<T> {
+        fn describe(&self) -> &'static str {
+            "boxed"
+        }
+    }
+
+    impl<T: Debug> Shape for Shown<T> {
+        fn describe(&self) -> &'static str {
+            "shown"
+        }
+    }
+}
+
+#[test]
+fn a_binder_seals_a_generic_type_under_a_plain_trait() {
+    use generic_type::{Boxed, NotDebug, Shape, Shown};
+
+    // no bound on the binder, so every `T` is permitted
+    assert_eq!(Boxed(NotDebug).describe(), "boxed");
+    // `Shown` is sealed only where its binder's bound holds
+    assert_eq!(Shown(1).describe(), "shown");
 }
 
 /// A list may be empty: the trait is then sealed against everything, which is

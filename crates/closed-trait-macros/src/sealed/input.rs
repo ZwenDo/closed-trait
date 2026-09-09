@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use syn::parse::{ParseStream, Parser};
 use syn::{Error, GenericParam, Generics, Ident, ItemTrait, Path, Result, Token, Type};
 
-use crate::util::{lifetimes, mentions, name_of, render};
+use crate::util::{lifetimes, name_of, render};
 
 /// A validated `#[sealed(..)]` invocation.
 pub(crate) struct Input {
@@ -15,7 +15,7 @@ pub(crate) struct Input {
 impl Input {
     pub(crate) fn parse(args: TokenStream, item: ItemTrait) -> Result<Self> {
         let Args { types } = Args::parse(args)?;
-        undeclared_lifetimes(&types, &item)?;
+        undeclared_lifetimes(&types)?;
         unpinned_entries(&types, &item)?;
         mismatched_instantiations(&types, &item)?;
 
@@ -58,9 +58,9 @@ fn mismatched_instantiations(types: &[SealedType], item: &ItemTrait) -> Result<(
 /// An entry has to say which instantiation of a generic trait it implements.
 ///
 /// The list is checked in both directions, and the restrictive half needs the
-/// trait's type and const parameters supplied for the entry: either the type
-/// names them itself, as `Boxed<T>` does under `trait Store<T>`, or the entry
-/// annotates them, as in `Plain: Store<i32>`.
+/// trait's type and const parameters supplied for the entry, which only its
+/// instantiation does: `Plain: Store<i32>` pins them, `for<T> Boxed<T>: Store<T>`
+/// takes them from the binder.
 ///
 /// Leaving it to inference nearly works: it finds the answer when there is a
 /// single impl, and reports a missing one. But a type implementing the trait
@@ -82,54 +82,37 @@ fn unpinned_entries(types: &[SealedType], item: &ItemTrait) -> Result<()> {
         return Ok(());
     }
 
+    // Only the instantiation says it now: a bare name in the entry is whatever is
+    // in scope where it was written, never the trait's parameter of that name.
     for entry in types {
         if entry.instantiation.is_some() {
             continue;
         }
 
-        let bound: Vec<String> = entry
-            .binder
-            .iter()
-            .flat_map(|binder| binder.params.iter())
-            .map(name_of)
-            .collect();
-        let missing: Vec<&str> = needed
-            .iter()
-            .filter(|name| !bound.contains(name) && !mentions(&entry.ty, name))
-            .map(String::as_str)
-            .collect();
-
-        if !missing.is_empty() {
-            let ty = render(&entry.ty);
-            let trait_ = &item.ident;
-            let named = missing.join("`, `");
-            let example = needed.iter().map(|_| "..").collect::<Vec<_>>().join(", ");
-            return Err(Error::new_spanned(
-                &entry.ty,
-                format!(
-                    "`{ty}` does not say which `{trait_}` it implements: it names neither \
-                     `{named}` nor an instantiation, so nothing can check that it implements \
-                     `{trait_}` at all.\nWrite `{ty}: {trait_}<{example}>` with the arguments \
-                     it implements, or name the trait's parameters in the type itself"
-                ),
-            ));
-        }
+        let ty = render(&entry.ty);
+        let trait_ = &item.ident;
+        let example = needed.iter().map(|_| "..").collect::<Vec<_>>().join(", ");
+        return Err(Error::new_spanned(
+            &entry.ty,
+            format!(
+                "`{ty}` does not say which `{trait_}` it implements, so nothing can check that \
+                 it implements `{trait_}` at all.\nWrite `{ty}: {trait_}<{example}>` with the \
+                 arguments it implements"
+            ),
+        ));
     }
 
     Ok(())
 }
 
-/// A lifetime an entry names has to come from somewhere.
+/// A lifetime an entry names has to be bound by its own `for<..>`.
 ///
-/// Left to itself the macro would declare it, which quietly turns the entry
-/// into a claim about *every* lifetime, and makes renaming the trait's own
-/// parameter change what is sealed, since a name that matches the trait's
-/// carries the trait's bounds while one that does not carries none. `for<..>`
-/// says which was meant, exactly as it does for a type. `'_` and `'static` are
-/// not names to be confused with anything, so they pass.
-fn undeclared_lifetimes(types: &[SealedType], item: &ItemTrait) -> Result<()> {
-    let declared: Vec<String> = item.generics.params.iter().map(name_of).collect();
-
+/// Left to itself the macro would declare it, which quietly turns the entry into
+/// a claim about *every* lifetime. The trait's own are not in scope here, no
+/// more than its type parameters are: a bare name is whatever is in scope where
+/// the attribute was written. `'_` and `'static` are not names to be confused
+/// with anything, so they pass.
+fn undeclared_lifetimes(types: &[SealedType]) -> Result<()> {
     for entry in types {
         let bound: Vec<String> = entry
             .binder
@@ -140,18 +123,15 @@ fn undeclared_lifetimes(types: &[SealedType], item: &ItemTrait) -> Result<()> {
 
         for lifetime in lifetimes(&entry.ty) {
             let name = lifetime.to_string();
-            if bound.contains(&name) || declared.contains(&name) {
+            if bound.contains(&name) {
                 continue;
             }
 
             return Err(Error::new(
                 lifetime.span(),
                 format!(
-                    "`'{name}` is neither declared by `{trait_}` nor bound by a `for<..>`, so \
-                     this entry would quietly mean every `'{name}`.\nWrite \
-                     `for<'{name}> {ty}` if that is what you meant, or name one of \
-                     `{trait_}`'s own lifetimes",
-                    trait_ = item.ident,
+                    "`'{name}` is not bound by a `for<..>`, so this entry would quietly mean \
+                     every `'{name}`.\nWrite `for<'{name}> {ty}` if that is what you meant",
                     ty = render(&entry.ty),
                 ),
             ));
@@ -334,16 +314,19 @@ mod tests {
     #[test]
     fn an_undeclared_lifetime_is_refused() {
         let message = refused(quote!(Slice<'b>), plain());
-        assert!(message.contains("neither declared by `Shape`"));
+        assert!(message.contains("not bound by a `for<..>`"), "{message}");
         assert!(message.contains("for<'b> Slice<'b>"), "names the fix");
     }
 
+    /// The trait's own lifetimes are not in scope in an entry either: a bare
+    /// name is whatever the attribute was written beside.
     #[test]
-    fn a_lifetime_the_trait_declares_is_accepted() {
+    fn a_lifetime_the_trait_declares_is_refused_all_the_same() {
         let item: ItemTrait = parse_quote!(
             pub trait Text<'a> {}
         );
-        assert_eq!(accepted(quote!(Slice<'a>), item).len(), 1);
+        let message = refused(quote!(Slice<'a>), item);
+        assert!(message.contains("not bound by a `for<..>`"), "{message}");
     }
 
     #[test]
@@ -379,12 +362,17 @@ mod tests {
     }
 
     #[test]
-    fn naming_the_parameter_or_annotating_it_both_satisfy_the_check() {
+    fn only_an_instantiation_says_which_trait_an_entry_implements() {
         let item: ItemTrait = parse_quote!(
             pub trait Store<T> {}
         );
-        assert_eq!(accepted(quote!(Boxed<T>), item.clone()).len(), 1);
-        assert_eq!(accepted(quote!(Plain: Store<i32>), item).len(), 1);
+        // Naming the trait's parameter in the type says nothing: `T` there is
+        // whatever `T` is in scope where the attribute was written.
+        let message = refused(quote!(Boxed<T>), item.clone());
+        assert!(message.contains("does not say which `Store`"), "{message}");
+
+        assert_eq!(accepted(quote!(Plain: Store<i32>), item.clone()).len(), 1);
+        assert_eq!(accepted(quote!(for<U> Boxed<U>: Store<U>), item).len(), 1);
     }
 
     /// A trait parameterised only by lifetimes asks nothing of its entries:

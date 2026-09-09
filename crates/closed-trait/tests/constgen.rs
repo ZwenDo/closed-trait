@@ -22,7 +22,7 @@ mod declared {
 
     pub struct Row<const N: usize>(pub [u8; N]);
 
-    #[sealed(Row<N>)]
+    #[sealed(for<const N: usize> Row<N>: Width<N>)]
     pub trait Width<const N: usize> {
         fn width(&self) -> usize;
     }
@@ -52,7 +52,7 @@ mod pinned {
     pub struct Row3;
     pub struct Row<const N: usize>(pub [u8; N]);
 
-    #[sealed(Row3: Width<3>, Row<N>)]
+    #[sealed(Row3: Width<3>, for<const N: usize> Row<N>: Width<N>)]
     pub trait Width<const N: usize> {
         fn width(&self) -> usize;
     }

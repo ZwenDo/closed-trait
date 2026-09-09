@@ -5,7 +5,7 @@ pub struct Boxed<T>(pub T);
 
 // `Plain` names none of the trait's parameters, so nothing could check that it
 // implements `Store` at all.
-#[sealed(Plain, Boxed<T>)]
+#[sealed(Plain, for<T> Boxed<T>: Store<T>)]
 pub trait Store<T> {}
 
 impl Store<i32> for Plain {}
