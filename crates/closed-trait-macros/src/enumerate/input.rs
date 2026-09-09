@@ -327,18 +327,26 @@ fn option(key: &Ident, stream: ParseStream, options: &mut Options, in_group: boo
             let named = if stream.peek(syn::token::Paren) {
                 let inner;
                 syn::parenthesized!(inner in stream);
-                Some(inner.parse::<Ident>()?)
+                if !inner.peek(LitStr) {
+                    return Err(
+                        inner.error(r#"expected a string, as in `match_any("match_shape")`"#)
+                    );
+                }
+                Some(inner.parse::<LitStr>()?.parse::<Ident>()?)
             } else {
                 None
             };
             options.match_any = Some(named);
         }
         NO_BRIDGE => options.no_bridge = Some(key.span()),
-        // A bare identifier: it names an item rather than carrying syntax that
-        // needs delimiting.
+        // A string, as every option carrying a name or a visibility is written
+        // across these macros, so one spelling covers them all.
         "name" => {
             stream.parse::<Token![=]>()?;
-            let value = stream.parse::<Ident>()?;
+            if !stream.peek(LitStr) {
+                return Err(stream.error(r#"expected a string, as in `name = "Shapes"`"#));
+            }
+            let value = stream.parse::<LitStr>()?.parse::<Ident>()?;
             if options.name.replace(value).is_some() {
                 return Err(Error::new_spanned(key, "duplicate `name` option"));
             }
@@ -976,7 +984,7 @@ mod tests {
     #[test]
     fn a_grouped_name_is_a_base_each_kind_extends() {
         assert_eq!(
-            names(quote!(name = Shapes)),
+            names(quote!(name = "Shapes")),
             vec![
                 Some("Shapes".to_owned()),
                 Some("ShapesRef".to_owned()),
@@ -989,7 +997,7 @@ mod tests {
     fn a_specific_name_is_the_name_itself() {
         // and leaves the other two on the grouped base
         assert_eq!(
-            names(quote!(name = Shapes, ref(name = View))),
+            names(quote!(name = "Shapes", ref(name = "View"))),
             vec![
                 Some("Shapes".to_owned()),
                 Some("View".to_owned()),
@@ -1009,7 +1017,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            macros(quote!(match_any(walk))),
+            macros(quote!(match_any("walk"))),
             vec![
                 Some("walk".to_owned()),
                 Some("walk_ref".to_owned()),
@@ -1021,7 +1029,7 @@ mod tests {
     #[test]
     fn a_specific_macro_name_overrides_just_that_one() {
         assert_eq!(
-            macros(quote!(match_any, mut(match_any(walk)))),
+            macros(quote!(match_any, mut(match_any("walk")))),
             vec![
                 Some("match_any_shape".to_owned()),
                 Some("match_any_shape_ref".to_owned()),
@@ -1079,7 +1087,7 @@ mod tests {
     #[test]
     fn a_grouped_no_bridge_cannot_be_undone_by_a_group() {
         assert_eq!(
-            bridges(quote!(no_bridge, ref(name = View))),
+            bridges(quote!(no_bridge, ref(name = "View"))),
             vec![Some(false); 3]
         );
     }
@@ -1113,7 +1121,16 @@ mod tests {
 
     #[test]
     fn a_repeated_name_is_refused() {
-        assert!(refused(quote!(name = A, name = B)).contains("duplicate `name`"));
+        assert!(refused(quote!(name = "A", name = "B")).contains("duplicate `name`"));
+    }
+
+    /// A name is written as a string, as it is for every other macro here, so
+    /// the bare identifier is refused with the spelling that works.
+    #[test]
+    fn a_bare_name_is_refused() {
+        assert!(refused(quote!(name = Shapes)).contains(r#"`name = "Shapes"`"#));
+        assert!(refused(quote!(ref(name = View))).contains(r#"`name = "Shapes"`"#));
+        assert!(refused(quote!(match_any(walk))).contains(r#"`match_any("match_shape")`"#));
         assert!(refused(quote!(crate = "::a", crate = "::b")).contains("duplicate `crate`"));
     }
 }

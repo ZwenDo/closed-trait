@@ -78,7 +78,11 @@ mod naming {
 
     pub struct Tile;
 
-    #[enumerate(match_any(walk), ref(name = TileView), mut(match_any(walk_uniquely)))]
+    #[enumerate(
+        match_any("walk"),
+        ref(name = "TileView"),
+        mut(match_any("walk_uniquely"))
+    )]
     #[sealed(Tile)]
     pub trait Surface {
         fn cells(&self) -> i32;

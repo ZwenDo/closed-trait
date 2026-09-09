@@ -326,15 +326,15 @@ pub fn sealed(args: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// Names the enums, which are `Any{Trait}`, `Any{Trait}Ref` and `Any{Trait}Mut` by default.
 ///
-/// Grouped, it is a **base** that each kind extends, so `name = Shapes` gives `Shapes`, `ShapesRef`
-/// and `ShapesMut`. Specific, it is the name itself: `ref(name = ShapeView)` gives exactly
-/// `ShapeView`.
+/// Grouped, it is a **base** that each kind extends, so `name = "Shapes"` gives `Shapes`,
+/// `ShapesRef` and `ShapesMut`. Specific, it is the name itself: `ref(name = "ShapeView")` gives
+/// exactly `ShapeView`.
 ///
 /// ```
 /// # use closed_trait::{enumerate, sealed};
 /// # struct Square;
 ///
-/// #[enumerate(name = Shapes, ref(name = ShapeView))]
+/// #[enumerate(name = "Shapes", ref(name = "ShapeView"))]
 /// #[sealed(Square)]
 /// trait Shape {}
 ///
@@ -484,9 +484,9 @@ pub fn sealed(args: TokenStream, item: TokenStream) -> TokenStream {
 /// of variants, since the body is type-checked once per arm, and one mistake in it is reported once
 /// per arm too. Nesting one of these inside another squares the count.
 ///
-/// The option takes an optional name, so `match_any(match_shape)` generates `match_shape!` instead.
-/// Whether the macro can leave the crate depends on the trait's visibility, and so does whether
-/// it can collide, see [Visibility](#visibility).
+/// The option takes an optional name, so `match_any("match_shape")` generates `match_shape!`
+/// instead. Whether the macro can leave the crate depends on the trait's visibility, and so does
+/// whether it can collide, see [Visibility](#visibility).
 ///
 /// # Visibility
 ///
@@ -506,7 +506,7 @@ pub fn sealed(args: TokenStream, item: TokenStream) -> TokenStream {
 /// | anything narrower | where it was written                       | no                        | no          |
 ///
 /// Colliding means two traits of the same name, in different modules, both asking for `match_any`:
-/// their hidden root names would be the same, and one of them needs `match_any(other_name)`.
+/// their hidden root names would be the same, and one of them needs `match_any("other_name")`.
 ///
 /// # Generics
 ///

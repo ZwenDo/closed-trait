@@ -15,7 +15,7 @@ pub struct Circle;
 
 #[enumerate(
     match_any,
-    name = Shapes,
+    name = "Shapes",
     owned(attrs = "#[derive(Debug, Clone, PartialEq)]"),
     crate = "crate::reexport"
 )]

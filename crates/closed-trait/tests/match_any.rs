@@ -152,7 +152,7 @@ mod surfaces {
 
     pub struct Tile;
 
-    #[enumerate(match_any(match_surface))]
+    #[enumerate(match_any("match_surface"))]
     #[sealed(Tile)]
     pub trait Surface {
         fn cells(&self) -> i32;

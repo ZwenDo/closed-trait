@@ -1,0 +1,11 @@
+error: expected a string, as in `name = "Shapes"`
+ --> tests/ui/enumerate_names_must_be_strings.rs:7:20
+  |
+7 | #[enumerate(name = Shapes)]
+  |                    ^^^^^^
+
+error: expected a string, as in `match_any("match_shape")`
+  --> tests/ui/enumerate_names_must_be_strings.rs:15:23
+   |
+15 | #[enumerate(match_any(walk))]
+   |                       ^^^^
