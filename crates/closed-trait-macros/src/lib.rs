@@ -638,7 +638,7 @@ pub fn enumerate(args: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// The macro is named after the function, with a `try_` prefix: `describe` gets `try_describe!`,
 /// `parse` gets `try_parse!`. `name = ".."` gives it another name. It takes an expression, tests
-/// its type, and returns `Some` of an[`Fn`] for that instantiation or `None`. Nothing is moved and
+/// its type, and returns `Some` of an [`Fn`] for that instantiation or `None`. Nothing is moved and
 /// nothing runs until that `Fn` is called, which may happen more than once:
 ///
 /// ```
@@ -768,8 +768,8 @@ pub fn enumerate(args: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// ## Naming
 ///
-/// `name = ".."` replaces the `try_` prefix outright, for a function whose macro reads badly under it
-/// or whose name is already taken:
+/// `name = ".."` is the macro's whole name, `try_` included, for a function whose macro reads badly
+/// under the prefix or whose name is already taken:
 ///
 /// ```
 /// # use closed_trait::if_implements_fn;
@@ -778,7 +778,10 @@ pub fn enumerate(args: TokenStream, item: TokenStream) -> TokenStream {
 /// pub fn print_debug<T: Debug>(v: &T) {
 ///     println!("{v:?}");
 /// }
-/// # fn main() {}
+///
+/// # fn main() {
+/// assert!(debug_if_possible!(&1).is_some());
+/// # }
 /// ```
 ///
 /// # In a generic function
