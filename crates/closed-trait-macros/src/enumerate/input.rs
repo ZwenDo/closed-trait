@@ -1,14 +1,14 @@
 use proc_macro2::{Span, TokenStream};
-use quote::{format_ident, quote};
+use quote::{ToTokens, format_ident, quote};
 use syn::ext::IdentExt;
 use syn::parse::{ParseStream, Parser};
 use syn::{
-    Attribute, Error, GenericParam, Ident, ItemTrait, LitStr, Meta, Path, PathArguments, Result,
-    Token, Type, parse_quote,
+    Attribute, Error, GenericArgument, GenericParam, Generics, Ident, ItemTrait, LitStr, Meta,
+    Path, PathArguments, Result, Token, Type, parse_quote,
 };
 
 use crate::sealed::{self, SealedType};
-use crate::util::{argument, lifetimes, mentions, name_of, render, snake_case};
+use crate::util::{argument, lifetimes, mentions, name_of, rename, render, snake_case};
 
 const MATCH_ANY: &str = "match_any";
 const NO_BRIDGE: &str = "no_bridge";
@@ -86,7 +86,14 @@ impl Input {
     pub(crate) fn parse(args: TokenStream, item: ItemTrait) -> Result<Self> {
         let args = parse_args(args)?;
 
-        let entries = sealed_types(&item)?;
+        // A `for<..>` names parameters the trait never declared, and the enum can
+        // only be named in the trait's own. Every entry is rewritten into those
+        // before anything reads it, so nothing downstream has to know the
+        // difference.
+        let entries = sealed_types(&item)?
+            .into_iter()
+            .map(|entry| in_traits_terms(entry, &item))
+            .collect::<Result<Vec<_>>>()?;
         let shared_params = enum_parameters(&item, &entries);
         let variants = entries
             .iter()
@@ -459,11 +466,166 @@ fn enum_parameters(item: &ItemTrait, entries: &[SealedType]) -> Vec<GenericParam
         .collect()
 }
 
-fn uses(ty: &Type, param: &GenericParam) -> bool {
+/// A trait parameter carrying whatever the entry's binder asked of it as well.
+///
+/// `for<U: Debug> Held<U>: Keep<U>` says `Held<T>` implements `Keep<T>` only where
+/// `T: Debug`, so the impls carrying it into the enum say the same. Without this
+/// they would claim it for every `T`, and an `AnyKeep<T>` could hold a `Held<T>`
+/// that does not implement the trait at all.
+fn bounded(param: &GenericParam, entry: &SealedType) -> GenericParam {
+    let name = name_of(param);
+    let bound = entry
+        .binder
+        .iter()
+        .flat_map(|binder| binder.params.iter())
+        .find(|bound| name_of(bound) == name);
+
+    // Only what the trait does not already ask: the two lists overlap whenever a
+    // binder repeats a bound the trait declares, and `T: Debug + Debug` compiles
+    // but reads as a mistake.
+    match (param.clone(), bound) {
+        (GenericParam::Type(mut param), Some(GenericParam::Type(bound))) => {
+            let known: Vec<String> = param.bounds.iter().map(render).collect();
+            let added = bound
+                .bounds
+                .iter()
+                .filter(|bound| !known.contains(&render(bound)))
+                .cloned()
+                .collect::<Vec<_>>();
+            param.bounds.extend(added);
+            GenericParam::Type(param)
+        }
+        (GenericParam::Lifetime(mut param), Some(GenericParam::Lifetime(bound))) => {
+            let known: Vec<String> = param.bounds.iter().map(render).collect();
+            let added = bound
+                .bounds
+                .iter()
+                .filter(|bound| !known.contains(&render(bound)))
+                .cloned()
+                .collect::<Vec<_>>();
+            param.bounds.extend(added);
+            GenericParam::Lifetime(param)
+        }
+        // A const parameter carries no bounds, and a mismatched kind is rustc's
+        // to report against the instantiation.
+        (param, _) => param,
+    }
+}
+
+fn uses(ty: &impl ToTokens, param: &GenericParam) -> bool {
     match param {
         GenericParam::Lifetime(param) => lifetimes(ty).contains(&param.lifetime.ident),
         GenericParam::Type(param) => mentions(ty, &param.ident.to_string()),
         GenericParam::Const(param) => mentions(ty, &param.ident.to_string()),
+    }
+}
+
+/// The entry's type written in the trait's own parameters.
+///
+/// A `for<..>` declares parameters the trait never did, and the enum is named in
+/// a supertrait bound where only the trait's are in scope. The instantiation is
+/// what ties the two together: in `for<U> Boxed<U>: Store<U>` on `trait Store<T>`,
+/// `U` stands where `T` does, so the variant holds `Boxed<T>`.
+///
+/// A binder parameter the instantiation does not place stays free, and an entry
+/// whose type needs one cannot be held at all.
+fn in_traits_terms(entry: SealedType, item: &ItemTrait) -> Result<SealedType> {
+    let Some(binder) = &entry.binder else {
+        return Ok(entry);
+    };
+
+    // Positional, as the trait's parameters and the instantiation's arguments
+    // line up: only an argument that is exactly a bound name places one.
+    let arguments = entry
+        .instantiation
+        .as_ref()
+        .map(instantiation_arguments)
+        .unwrap_or_default();
+    let renames: Vec<(String, TokenStream)> = item
+        .generics
+        .params
+        .iter()
+        .zip(arguments)
+        .filter_map(|(param, given)| {
+            let given = render(&given);
+            let bound = binder
+                .params
+                .iter()
+                .find(|bound| name_of_argument(bound) == given)?;
+            Some((name_of_argument(bound), argument(param)))
+        })
+        .collect();
+
+    for bound in &binder.params {
+        let name = name_of_argument(bound);
+        let used = match bound {
+            GenericParam::Lifetime(bound) => lifetimes(&entry.ty)
+                .iter()
+                .any(|found| found == &bound.lifetime.ident),
+            other => mentions(&entry.ty, &name_of(other)),
+        };
+        if !used || renames.iter().any(|(from, _)| from == &name) {
+            continue;
+        }
+
+        // Only worth suggesting where the trait has a parameter to stand for.
+        let remedy = match item.generics.params.is_empty() {
+            true => format!(
+                "Declare `{name}` on `{}` itself, or remove `#[enumerate]`",
+                item.ident
+            ),
+            false => format!(
+                "Write `: {}<..>` with `{name}` where that parameter goes, or remove \
+                 `#[enumerate]`",
+                item.ident,
+            ),
+        };
+        return Err(Error::new_spanned(
+            &entry.ty,
+            format!(
+                "`#[enumerate]` cannot hold `{}`: `{name}` is bound by the `for<..>` and the \
+                 instantiation does not say which of `{}`'s parameters it stands for, so the \
+                 generated enum could not be named in its supertrait bound.\n{remedy}",
+                render(&entry.ty),
+                item.ident,
+            ),
+        ));
+    }
+
+    // The instantiation is rewritten with it: it says which `Store` the type
+    // implements, and must say so in the same parameters the type now uses.
+    let instantiation = match &entry.instantiation {
+        Some(path) => Some(syn::parse2(rename(path, &renames))?),
+        None => None,
+    };
+
+    // Kept rather than dropped, renamed along with everything else: a bound the
+    // binder wrote is the caller's, and the impls carrying the type into the enum
+    // have to keep it. `for<U: Debug> Held<U>: Keep<U>` becomes `for<T: Debug>`,
+    // and only `Held<T>` where `T: Debug` reaches `AnyKeep<T>`.
+    let params = binder
+        .params
+        .iter()
+        .map(|param| syn::parse2::<GenericParam>(rename(param, &renames)))
+        .collect::<Result<_>>()?;
+    let binder = Generics {
+        params,
+        ..binder.clone()
+    };
+
+    Ok(SealedType {
+        ty: syn::parse2(rename(&entry.ty, &renames))?,
+        binder: Some(binder),
+        instantiation,
+        ..entry
+    })
+}
+
+/// The arguments an instantiation writes, as in `Store<i32>`.
+fn instantiation_arguments(path: &Path) -> Vec<GenericArgument> {
+    match path.segments.last().map(|segment| &segment.arguments) {
+        Some(PathArguments::AngleBracketed(arguments)) => arguments.args.iter().cloned().collect(),
+        _ => Vec::new(),
     }
 }
 
@@ -472,29 +634,21 @@ fn uses(ty: &Type, param: &GenericParam) -> bool {
 fn variant(entry: &SealedType, item: &ItemTrait, shared: &[GenericParam]) -> Result<Variant> {
     let ty = &entry.ty;
 
-    // A binder introduces parameters the trait never declared, so the pin could
-    // not name them. Same reason a lifetime the trait does not declare is out.
-    if entry.binder.is_some() {
-        return Err(Error::new_spanned(
-            ty,
-            format!(
-                "`#[enumerate]` cannot hold `{}`: a `for<..>` type is generic over parameters \
-                 `{}` does not declare, so the generated enum could not be named in its \
-                 supertrait bound.\nEither drop the binder and declare the parameter on \
-                 `{}` itself, or remove `#[enumerate]`",
-                render(ty),
-                item.ident,
-                item.ident,
-            ),
-        ));
-    }
-
+    // The instantiation counts as much as the type does: `Plain: Keep<T>` names
+    // `T` where `Plain` names nothing, and the impls carrying it into the enum
+    // have to declare what they name.
     let declared: Vec<GenericParam> = item
         .generics
         .params
         .iter()
-        .filter(|param| uses(ty, param))
-        .cloned()
+        .filter(|param| {
+            uses(ty, param)
+                || entry
+                    .instantiation
+                    .as_ref()
+                    .is_some_and(|path| uses(path, param))
+        })
+        .map(|param| bounded(param, entry))
         .collect();
 
     let free: Vec<_> = lifetimes(ty)
@@ -669,8 +823,15 @@ fn dispatchable(item: &ItemTrait, entries: &[SealedType], shared: &[GenericParam
         ));
     }
 
-    if let Some(entry) = entries.iter().find(|entry| entry.instantiation.is_some()) {
-        let instantiation = entry.instantiation.as_ref().expect("just matched");
+    // An instantiation only bars the entry when it *fixes* something: written in
+    // the trait's own parameters it is the identity, and the entry is a variant of
+    // every instantiation like any other.
+    let wanted = render(&trait_bound(item, shared));
+    let pinned = entries.iter().find_map(|entry| {
+        let instantiation = entry.instantiation.as_ref()?;
+        (render(instantiation) != wanted).then_some((entry, instantiation))
+    });
+    if let Some((entry, instantiation)) = pinned {
         return Err(Error::new_spanned(
             &entry.ty,
             format!(
@@ -679,7 +840,7 @@ fn dispatchable(item: &ItemTrait, entries: &[SealedType], shared: &[GenericParam
                  option, or make `{ty}` generic over the same parameters as `{trait_}`",
                 ty = render(&entry.ty),
                 had = render(instantiation),
-                want = render(&trait_bound(item, shared)),
+                want = wanted,
                 trait_ = item.ident,
             ),
         ));

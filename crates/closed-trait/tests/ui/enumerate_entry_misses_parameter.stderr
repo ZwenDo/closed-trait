@@ -2,12 +2,12 @@ error: `Plain` does not name `T`, which the generated enum is generic over, so t
        Say how it instantiates the trait: `Plain: Store<..>`
  --> tests/ui/enumerate_entry_misses_parameter.rs:7:10
   |
-7 | #[sealed(Plain, Boxed<T>)]
+7 | #[sealed(Plain, for<T> Boxed<T>: Store<T>)]
   |          ^^^^^
 
-error: `Plain` does not say which `Store` it implements: it names neither `T` nor an instantiation, so nothing can check that it implements `Store` at all.
-       Write `Plain: Store<..>` with the arguments it implements, or name the trait's parameters in the type itself
+error: `Plain` does not say which `Store` it implements, so nothing can check that it implements `Store` at all.
+       Write `Plain: Store<..>` with the arguments it implements
  --> tests/ui/enumerate_entry_misses_parameter.rs:7:10
   |
-7 | #[sealed(Plain, Boxed<T>)]
+7 | #[sealed(Plain, for<T> Boxed<T>: Store<T>)]
   |          ^^^^^

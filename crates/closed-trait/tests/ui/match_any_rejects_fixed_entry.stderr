@@ -2,5 +2,5 @@ error: `#[enumerate(match_any)]` cannot match `Plain`: it implements `Store<i32>
        Drop the `match_any` option, or make `Plain` generic over the same parameters as `Store`
  --> tests/ui/match_any_rejects_fixed_entry.rs:7:10
   |
-7 | #[sealed(Plain: Store<i32>, Boxed<T>)]
+7 | #[sealed(Plain: Store<i32>, for<T> Boxed<T>: Store<T>)]
   |          ^^^^^

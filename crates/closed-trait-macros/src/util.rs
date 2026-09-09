@@ -49,6 +49,63 @@ pub(crate) fn lifetimes(tokens: &impl ToTokens) -> Vec<Ident> {
     found
 }
 
+/// Rewrites every name in `tokens` that `renames` has an entry for.
+///
+/// Lifetimes are keyed with their apostrophe, so `'a` and a type parameter `a`
+/// are told apart. Only whole idents match, leaving `SomeT` alone when `T` is
+/// renamed, and the walk descends into groups so nested arguments are covered.
+pub(crate) fn rename(tokens: &impl ToTokens, renames: &[(String, TokenStream)]) -> TokenStream {
+    fn find<'a>(renames: &'a [(String, TokenStream)], name: &str) -> Option<&'a TokenStream> {
+        renames
+            .iter()
+            .find(|(from, _)| from == name)
+            .map(|(_, to)| to)
+    }
+
+    fn walk(tokens: TokenStream, renames: &[(String, TokenStream)]) -> TokenStream {
+        let mut out = TokenStream::new();
+        // Held back until the next token says whether it opens a lifetime.
+        let mut apostrophe: Option<TokenTree> = None;
+
+        for token in tokens {
+            match token {
+                TokenTree::Ident(ident) => match apostrophe.take() {
+                    Some(punct) => match find(renames, &format!("'{ident}")) {
+                        Some(to) => out.extend(to.clone()),
+                        None => {
+                            out.extend([punct, TokenTree::Ident(ident)]);
+                        }
+                    },
+                    None => match find(renames, &ident.to_string()) {
+                        Some(to) => out.extend(to.clone()),
+                        None => out.extend([TokenTree::Ident(ident)]),
+                    },
+                },
+                TokenTree::Punct(punct) if punct.as_char() == '\'' => {
+                    out.extend(apostrophe.take());
+                    apostrophe = Some(TokenTree::Punct(punct));
+                }
+                TokenTree::Group(group) => {
+                    out.extend(apostrophe.take());
+                    let inner = walk(group.stream(), renames);
+                    out.extend([TokenTree::Group(proc_macro2::Group::new(
+                        group.delimiter(),
+                        inner,
+                    ))]);
+                }
+                other => {
+                    out.extend(apostrophe.take());
+                    out.extend([other]);
+                }
+            }
+        }
+        out.extend(apostrophe);
+        out
+    }
+
+    walk(tokens.to_token_stream(), renames)
+}
+
 /// Renders tokens the way a person would write them.
 ///
 /// `TokenStream`'s own `to_string` separates every token, so a type comes out
@@ -237,5 +294,50 @@ mod tests {
         assert_eq!(fresh(taken(&["S", "S2"]), "S").to_string(), "S3");
         // Gaps are not filled: it counts up from the base rather than hunting.
         assert_eq!(fresh(taken(&["S", "S3"]), "S").to_string(), "S2");
+    }
+
+    /// `rename` applied to a type, rendered back the way a person writes it.
+    fn renamed(ty: TokenStream, renames: &[(&str, &str)]) -> String {
+        let renames: Vec<(String, TokenStream)> = renames
+            .iter()
+            .map(|(from, to)| {
+                let to: TokenStream = to.parse().expect("the replacement parses");
+                ((*from).to_owned(), to)
+            })
+            .collect();
+        render(&rename(&ty, &renames))
+    }
+
+    #[test]
+    fn rename_replaces_whole_idents_only() {
+        assert_eq!(renamed(quote!(Boxed<U>), &[("U", "T")]), "Boxed<T>");
+        // `SomeU` merely contains the name.
+        assert_eq!(renamed(quote!(Boxed<SomeU>), &[("U", "T")]), "Boxed<SomeU>");
+    }
+
+    #[test]
+    fn rename_descends_into_nested_arguments() {
+        assert_eq!(
+            renamed(quote!(Boxed<Vec<(U, u8)>>), &[("U", "T")]),
+            "Boxed<Vec<(T, u8)>>"
+        );
+    }
+
+    #[test]
+    fn rename_tells_a_lifetime_from_a_type_of_the_same_name() {
+        // `'a` and a type parameter `a` are different names.
+        assert_eq!(
+            renamed(quote!(Slice<'a, a>), &[("'a", "'b")]),
+            "Slice<'b, a>"
+        );
+        assert_eq!(renamed(quote!(Slice<'a, a>), &[("a", "T")]), "Slice<'a, T>");
+    }
+
+    #[test]
+    fn rename_leaves_everything_else_alone() {
+        assert_eq!(renamed(quote!(Plain), &[("U", "T")]), "Plain");
+        assert_eq!(renamed(quote!(Boxed<U>), &[]), "Boxed<U>");
+        // A lifetime with no rename keeps its apostrophe.
+        assert_eq!(renamed(quote!(Slice<'a>), &[("U", "T")]), "Slice<'a>");
     }
 }
