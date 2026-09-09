@@ -28,102 +28,113 @@ use proc_macro::TokenStream;
 ///
 /// # Entries
 ///
-/// Each entry is a type, and can further say how that type implements the trait.
+/// An entry is a type, written plainly or as a path, as in `#[sealed(Square, shapes::Circle)]`, and
+/// that is all of it where neither the trait nor the type is generic. Cases where one or both of
+/// them are generic are presented in the next sections.
 ///
-/// ## Generic traits and types
+/// ## A generic trait
 ///
-/// One rule governs everything in this section:
-///
-/// **A bare name is a parameter only if the trait or a `for<..>` declares it**; otherwise it is
-/// whatever concrete type or const is in scope. The three cases below are the three ways an entry
-/// can answer that, and each takes lifetimes, types and const parameters alike.
-///
-/// ### Parameters the trait declares
-///
-/// A generic type implementing a generic trait at the same parameters names them as the trait
-/// declares them:
-///
-/// ```
-/// # use closed_trait::sealed;
-/// #[sealed(Boxed<'a, T>)] // `'a` and `T` are declared by the `Store` trait
-/// trait Store<'a, T> {}
-///
-/// struct Boxed<'t, X>(&'t X);
-///
-/// impl<'t, X> Store<'t, X> for Boxed<'t, X> {}
-/// # fn main() {}
-/// ```
-///
-/// Note which names the entry uses: `Boxed` declares `'t` and `X`, and the entry still writes `'a`
-/// and `T`. A bare name in an entry is read against the *trait*, never against the type it belongs
-/// to. A const parameter is named the same way, so `Row<N>` under `trait Width<const N: usize>`
-/// means every `Row`.
-///
-/// ### One instantiation
-///
-/// An implementor may implement a generic trait at one instantiation rather than generically. The
-/// `Entry: Trait<..>` syntax says which:
+/// A generic trait has to be told which of its instantiations the entry implements.
+/// `Entry: Trait<..>` says which:
 ///
 /// ```
 /// # use closed_trait::sealed;
 /// struct Plain;
-/// struct Boxed<T>(pub T);
-/// struct Keyed<T>(pub T);
 ///
-/// #[sealed(
-///     Plain: Store<i32>,        // implements the trait at one instantiation
-///     Boxed<T>,                 // the identity mapping needs no annotation
-///     Keyed<T>: Store<Vec<T>>,  // generic, but not the identity mapping
-/// )]
+/// #[sealed(Plain: Store<i32>)]
 /// trait Store<T> {}
 ///
 /// impl Store<i32> for Plain {}
-/// impl<T> Store<T> for Boxed<T> {}
-/// impl<T> Store<Vec<T>> for Keyed<T> {}
 /// # fn main() {}
 /// ```
 ///
-/// ### Parameters the trait does not declare
-///
-/// A type may be generic over parameters the trait knows nothing about. The entry declares them
-/// itself, with `for<..>`:
+/// One instantiation can be enough, but the type may implement the trait at every one of them.
+/// `for<..>` declares a parameter for the entry to instantiate with:
 ///
 /// ```
 /// # use closed_trait::sealed;
-/// struct Boxed<T>(T);
+/// struct Plain;
 ///
-/// #[sealed(for<T> Boxed<T>)]
-/// trait Shape {}
+/// // every `Store<T>`, not just one
+/// #[sealed(for<T> Plain: Store<T>)]
+/// trait Store<T> {}
 ///
-/// impl<T> Shape for Boxed<T> {}
+/// impl<T> Store<T> for Plain {}
 /// # fn main() {}
 /// ```
 ///
-/// Lifetimes work the same way, except that for them the binder is not optional. Left out, the
-/// same spelling would mean the trait's lifetime or every lifetime depending on what the trait
-/// happened to call its parameter, so renaming that parameter would quietly change what is
-/// sealed:
+/// A parameter the binder declares can carry bounds:
 ///
 /// ```
 /// # use closed_trait::sealed;
-/// struct Str<'a>(&'a str);
+/// # use std::fmt::Debug;
+/// struct Plain;
 ///
-/// #[sealed(for<'a> Str<'a>)]
-/// trait Shape {}
+/// #[sealed(for<T: Debug> Plain: Store<T>)]
+/// trait Store<T> {}
 ///
-/// impl<'a> Shape for Str<'a> {}
+/// impl<T: Debug> Store<T> for Plain {}
 /// # fn main() {}
 /// ```
+///
+/// The bounds are part of what is sealed: `Plain` is permitted `Store<T>` only where `T: Debug`, so
+/// an `impl<T> Store<T> for Plain` covering every `T` is refused.
 ///
 /// Lifetimes, types and const parameters can be declared together, lifetimes first (as in
-/// `for<'a, T: Clone, const N: usize>`), and each is written exactly as it would be on an `impl`,
-/// so a const parameter carries its type.
+/// `for<'a, T: Clone, const N: usize>`), and each is written exactly as it would be on an `impl`.
+///
+/// ## A generic type
+///
+/// The parameters a `for<..>` declares serve the type just as well, which is how a trait with no
+/// parameters of its own seals a generic type:
+///
+/// ```
+/// # use closed_trait::sealed;
+/// # struct Square;
+/// # impl Shape for Square {}
+/// # struct Circle;
+/// # impl Shape for Circle {}
+/// struct Ref<'a, T>(&'a T);
+///
+/// #[sealed(
+///     for<'a, T: Shape> Ref<'a, T>,
+///     Square,
+///     Circle,
+/// )]
+/// trait Shape {}
+///
+/// impl<'a, T: Shape> Shape for Ref<'a, T> {}
+/// # fn main() {}
+/// ```
+///
+/// ## A generic type under a generic trait
+///
+/// One binder covers both, and a name it declares may stand in the type and the instantiation
+/// alike.
+///
+/// ```
+/// # use closed_trait::sealed;
+/// struct Boxed<U>(U);
+///
+/// // every `Boxed<U>`, each at the matching `Store<U>`
+/// #[sealed(for<U> Boxed<U>: Store<U>)]
+/// trait Store<T> {}
+///
+/// impl<U> Store<U> for Boxed<U> {}
+/// # fn main() {}
+/// ```
+///
+/// The binder's names are its own, so where they go is what counts, not what they are called:
+/// `for<U, V> Pair<U, V>: Store<V, U>` seals `Pair<U, V>` at `Store<V, U>`, swapped. And the
+/// instantiation's arguments are ordinary types, so a parameter can sit inside a larger one rather
+/// than be the argument itself: `for<T> Keyed<T>: Store<Vec<T>>`.
 ///
 /// ## `as Name`
 ///
-/// Names the entry. The seal itself does not care: it is [`enumerate`][macro@enumerate] that reads
-/// the name, giving each variant the type's last path segment unless one is written here. Two
-/// entries collide over that in two ways.
+/// Names the entry. Only [`enumerate`][macro@enumerate] reads it: a variant is otherwise named
+/// after the type it holds, and two entries whose names come out the same would be one variant
+/// twice, which is refused. `as Name` gives one of them a name of its own. This happens in two
+/// ways.
 ///
 /// **Different types whose last segment matches.** Here the name settles which is which:
 ///
@@ -133,6 +144,7 @@ use proc_macro::TokenStream;
 /// mod b { pub struct Foo; }
 ///
 /// #[enumerate]
+/// // without `as`, both would take the last segment `Foo`
 /// #[sealed(a::Foo as Left, b::Foo as Right)]
 /// trait Shape {}
 ///
@@ -155,7 +167,7 @@ use proc_macro::TokenStream;
 /// struct Boxed<T>(pub T);
 ///
 /// #[enumerate]
-/// #[sealed(Plain: Store<i32>, Plain as PlainF64: Store<f64>, Boxed<T>)]
+/// #[sealed(Plain: Store<i32>, Plain as PlainF64: Store<f64>, for<T> Boxed<T>: Store<T>)]
 /// trait Store<T> {}
 ///
 /// impl Store<i32> for Plain {}
@@ -170,10 +182,12 @@ use proc_macro::TokenStream;
 /// ```
 ///
 /// The name settles the *variant* only. The two entries must also pin different arguments, and
-/// some entry (`Boxed<T>` here) has to *mention* `T`. The enum is generic over the parameters
-/// its variants use, not over the trait's, since an enum may not declare one no variant uses. With
-/// every entry pinned there would be no `AnyStore<T>` at all, both entries would land in the same
-/// `AnyStore`, and `enumerate` would refuse it.
+/// some entry (`Boxed<T>` here) has to *mention* `T`. The enum is generic over the parameters its
+/// variants use, not over the trait's, since an enum may not declare one no variant uses. Drop
+/// `Boxed<T>` and nothing is left to be generic over: both entries become variants of one plain
+/// `AnyStore`, so `Plain` converts into it two ways and `into_enum` has two answers. `enumerate`
+/// refuses that. Keeping the enum generic is what puts the two entries in `AnyStore<i32>` and
+/// `AnyStore<f64>`, one `Plain` apiece.
 ///
 /// ## All of it at once
 ///
@@ -181,23 +195,25 @@ use proc_macro::TokenStream;
 ///
 /// ```
 /// # use closed_trait::sealed;
-/// struct Foo<'a, T>(&'a T);
+/// struct Ref<'a, T>(&'a T);
 ///
 /// #[sealed(
-///     for<'a, T> Foo<'a, T> as Bar: Dummy<i32>
+///     for<'a, T> Ref<'a, T> as RefStore: Store<i32>
 /// )]
-/// trait Dummy<X> {}
+/// trait Store<T> {}
 ///
-/// impl<'a, T> Dummy<i32> for Foo<'a, T> {}
+/// impl<'a, T> Store<i32> for Ref<'a, T> {}
 /// # fn main() {}
 /// ```
 ///
 /// # The list is checked in both directions
 ///
-/// Every entry is checked, which is why the trait's type and const parameters have to be supplied
-/// for it: either the type names them itself, as `Boxed<T>` does under `trait Store<T>`, or the
-/// entry annotates its instantiation, as in `Plain: Store<i32>`. An entry that does neither is
-/// refused, since nothing could then tell whether it implements the trait at all.
+/// Every entry is checked, which is why a trait that declares type or const parameters needs them
+/// supplied for each of its entries, and the instantiation is what supplies them:
+/// `Plain: Store<i32>` pins them, `for<T> Boxed<T>: Store<T>` passes on what its binder declared.
+/// An entry without one is refused, since nothing could then tell whether it implements the trait
+/// at all. A trait declaring none asks nothing, which is why `#[sealed(Square, Circle)]` above
+/// needs no annotation.
 ///
 /// A lifetime is never asked for, and not merely because inference usually copes. A type cannot
 /// implement the same trait at two different lifetimes: two such impls overlap, and coherence
@@ -223,9 +239,9 @@ use proc_macro::TokenStream;
 /// # fn main() {}
 /// ```
 ///
-/// An entry naming the parameters instead, like `Boxed<T>`, permits every instantiation, which is
-/// what naming them says. Lifetimes are not on the marker, for the reason above: they could never
-/// tell two entries apart.
+/// An entry whose binder supplies them instead, like `for<T> Boxed<T>: Store<T>`, permits every
+/// instantiation, which is what the binder says. Lifetimes are not on the marker, for the reason
+/// above: they could never tell two entries apart.
 ///
 /// # What the seal is worth
 ///
@@ -494,39 +510,19 @@ pub fn sealed(args: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// # Generics
 ///
-/// The enum takes the trait's parameters that at least one entry names, with their bounds. Those
-/// parameters have to be nameable in the supertrait bound that pins the enum, and only the
-/// trait's own are in scope there, so an entry must be generic *solely* over parameters the trait
-/// declares.
-///
-/// ```
-/// # use closed_trait::{enumerate, sealed};
-///
-/// struct Boxed<T>(T);
-/// struct Listed<T>(Vec<T>);
-///
-/// #[enumerate(match_any)]
-/// #[sealed(Boxed<T>, Listed<T>)]
-/// pub trait Store<T> {}
-///
-/// impl<T> Store<T> for Boxed<T> {}
-/// impl<T> Store<T> for Listed<T> {}
-///
-/// # fn main() {
-/// let _: AnyStore<u8> = Listed(vec![]).into();
-/// # }
-/// ```
-///
-/// The enum is generic over the parameters its *variants* use, not over the trait's. An enum
-/// declaring one that no variant uses is refused, so a list whose every entry fixes its arguments
-/// produces a plain enum rather than a generic one.
+/// A generic trait's enum declares the parameters its variants are generic over, with their bounds,
+/// not those of the trait: an enum may not declare a parameter no variant uses. Where every entry
+/// pins its arguments, none is left to declare and the enum is plain:
 ///
 /// ```
 /// # use closed_trait::{enumerate, sealed};
 ///
 /// // every entry fixes its argument, so `AnyValue` is a plain enum
 /// #[enumerate]
-/// #[sealed(i32: Value<i32>, f64: Value<f64>)]
+/// #[sealed(
+///     i32: Value<i32>,
+///     f64: Value<f64>
+/// )]
 /// trait Value<T> {}
 ///
 /// impl Value<i32> for i32 {}
@@ -537,9 +533,31 @@ pub fn sealed(args: TokenStream, item: TokenStream) -> TokenStream {
 /// # }
 /// ```
 ///
-/// An entry that names no parameter the enum is generic over cannot produce a single enum type, and
-/// is rejected with a message naming the fix: annotate it in `#[sealed(..)]` with the
-/// instantiation it implements.
+/// ## `for<..>` entries
+///
+/// Parameters declared in a `for<..>` binder are the entry's own and never reach the enum. Each is
+/// passed to the trait as an argument, and the parameter it lands on, carrying the bounds the
+/// binder gave it, is what the enum declares:
+///
+/// ```
+/// # use closed_trait::{enumerate, sealed};
+/// # use closed_trait::Enumerable;
+/// struct Boxed<U>(U);
+///
+/// #[enumerate]
+/// #[sealed(for<U> Boxed<U>: Store<U>)] // here `U` is used in place of `T` declared by Store
+/// trait Store<T> {}
+///
+/// impl<V> Store<V> for Boxed<V> {}
+///
+/// # fn main() {
+/// let _: AnyStore<u8> = Boxed(1u8).into_enum();
+/// # }
+/// ```
+///
+/// A name never passed that way lands on no parameter, so the variant has nothing to be generic
+/// over and the entry is refused: under a trait declaring none at all, `for<U> Boxed<U>: Shape`
+/// leaves `U` free. `#[sealed]` accepts it, but the enum cannot.
 ///
 /// ## Pinned entries and `match_any`
 ///
@@ -547,8 +565,8 @@ pub fn sealed(args: TokenStream, item: TokenStream) -> TokenStream {
 /// parameters. Such an entry becomes a variant like any other, and the enum does not record which
 /// instantiation that variant belongs to.
 ///
-/// On the way *in* that costs nothing: `into_enum` and `From` exist only at the instantiations the
-/// entry named, so nothing ever builds a variant that does not belong.
+/// `into_enum` and `From` exist only at the instantiations the entry named, so nothing ever builds
+/// a variant that does not belong. Pinning therefore works with `enumerate`.
 ///
 /// ```
 /// # use closed_trait::{enumerate, sealed};
@@ -566,9 +584,9 @@ pub fn sealed(args: TokenStream, item: TokenStream) -> TokenStream {
 /// # }
 /// ```
 ///
-/// On the way *out* it costs the macro. Nothing stops the trait from being *named* at an
-/// instantiation no permitted type implements, and that is precisely where a body may ask the
-/// macro to expand. This is what `match_any` would become there, written out by hand:
+/// What such an entry rules out is `match_any`. Nothing stops the trait from being *named* at an
+/// instantiation no permitted type implements, and that is precisely where a body may ask the macro
+/// to expand. This is what it would become there, written out by hand:
 ///
 /// ```compile_fail
 /// # use closed_trait::{enumerate, sealed};
@@ -603,17 +621,10 @@ pub fn sealed(args: TokenStream, item: TokenStream) -> TokenStream {
 /// # fn main() {}
 /// ```
 ///
-/// What cannot hold is the `match`. `AnyValue::i32` hands back an `i32`, which is a `Value<i32>`
+/// What cannot hold is the `match_any`. `AnyValue::i32` hands back an `i32`, which is a `Value<i32>`
 /// and nothing else, so a body written against `Value<String>` cannot use it. Rather than generate
 /// that and let it fail inside the caller's code, `#[enumerate]` refuses it where the list is
 /// written.
-///
-/// None of this is a trade you elect. Pinning is the only way to put such a type in the enum at
-/// all: an entry that neither names the trait's parameters nor fixes them is refused outright, so
-/// the macro is not something you give up in exchange, it is simply unavailable once a variant
-/// exists that is not valid at every instantiation. `match_any` needs every entry to name the
-/// trait's parameters rather than fix them, which is exactly the case where every variant is valid
-/// everywhere.
 ///
 /// A permitted type that is not `Sized` cannot be held in a variant. That one is rustc's to
 /// report rather than this macro's, since sizedness is not visible in the tokens.
