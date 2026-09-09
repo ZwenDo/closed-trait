@@ -724,7 +724,9 @@ pub fn enumerate(args: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// `vis = ".."` gives the macro a visibility of its own, written as it would be on any item. Left
 /// out, it takes the function's, capped at the crate: a `pub` function gets a `pub(crate)` macro,
-/// and anything narrower keeps what it has.
+/// and anything narrower keeps what it has. Written out, it may narrow the function's visibility
+/// but not widen it, since the expansion is a call to the function: a macro reaching further than
+/// the function it calls would fail only at the call site.
 ///
 /// ```
 /// # use closed_trait::if_implements_fn;

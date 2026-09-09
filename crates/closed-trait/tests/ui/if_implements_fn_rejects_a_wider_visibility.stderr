@@ -1,0 +1,6 @@
+error: the macro would be more visible than the function it calls: `pub(crate)` against private to its module.
+       Widen the function, or narrow `vis`
+ --> tests/ui/if_implements_fn_rejects_a_wider_visibility.rs:6:26
+  |
+6 | #[if_implements_fn(vis = "pub(crate)")]
+  |                          ^^^^^^^^^^^^

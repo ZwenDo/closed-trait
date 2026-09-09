@@ -56,7 +56,25 @@ impl Input {
                     ),
                 ));
             }
-            Some(asked) => asked,
+            Some(asked) => {
+                // The macro expands to a call to the function, so one visible where
+                // the function is not only fails at the call site, pointing at an
+                // expansion the caller never wrote.
+                if let (Some(wanted), Some(had)) = (reach(&asked), reach(&item.vis)) {
+                    if wanted > had {
+                        return Err(syn::Error::new_spanned(
+                            &asked,
+                            format!(
+                                "the macro would be more visible than the function it calls: \
+                                 {} against {}.\nWiden the function, or narrow `{VIS}`",
+                                describe(&asked),
+                                describe(&item.vis),
+                            ),
+                        ));
+                    }
+                }
+                asked
+            }
             None => match &item.vis {
                 Visibility::Public(_) => parse_quote!(pub(crate)),
                 narrower => narrower.clone(),
@@ -169,6 +187,38 @@ pub(crate) fn mentions(tokens: TokenStream, ident: &Ident) -> bool {
         proc_macro2::TokenTree::Group(group) => mentions(group.stream(), ident),
         _ => false,
     })
+}
+
+/// How far a visibility reaches, on the scale the macro can order.
+///
+/// `pub(in path)` is left out: where it sits relative to `pub(super)` depends on
+/// the module tree, which the attribute cannot see from here, so a comparison
+/// against one is declined rather than guessed.
+fn reach(vis: &Visibility) -> Option<u8> {
+    match vis {
+        Visibility::Inherited => Some(0),
+        Visibility::Restricted(restricted) if restricted.in_token.is_none() => {
+            match restricted.path.get_ident()?.to_string().as_str() {
+                "self" => Some(0),
+                "super" => Some(1),
+                "crate" => Some(2),
+                _ => None,
+            }
+        }
+        Visibility::Restricted(_) => None,
+        Visibility::Public(_) => Some(3),
+    }
+}
+
+/// A visibility as an error message names it.
+fn describe(vis: &Visibility) -> &'static str {
+    match reach(vis) {
+        Some(0) => "private to its module",
+        Some(1) => "`pub(super)`",
+        Some(2) => "`pub(crate)`",
+        Some(3) => "`pub`",
+        _ => "restricted to a module",
+    }
 }
 
 /// The attribute's options, `vis = ..` and `name = ..`, in any order and each
@@ -505,6 +555,89 @@ mod tests {
     fn a_key_without_a_visibility_is_refused() {
         let message = refused_option(quote!(vis = "nonsense"));
         assert!(message.contains("expected a visibility"), "{message}");
+    }
+
+    /// The macro expands to a call to the function, so it may narrow the
+    /// function's visibility but never widen it.
+    #[test]
+    fn a_macro_wider_than_the_function_is_refused() {
+        let refused = |vis: &str, item: ItemFn| {
+            let args: TokenStream = format!(r#"vis = "{vis}""#)
+                .parse()
+                .expect("the option parses");
+            match Input::parse(args, item) {
+                Ok(_) => panic!("expected `vis = \"{vis}\"` to be refused"),
+                Err(error) => error.to_string(),
+            }
+        };
+
+        let message = refused(
+            "pub(crate)",
+            parse_quote!(
+                fn describe(value: impl Display) {}
+            ),
+        );
+        assert!(
+            message.contains("more visible than the function"),
+            "{message}"
+        );
+        assert!(message.contains("private to its module"), "{message}");
+
+        assert!(
+            refused(
+                "pub(crate)",
+                parse_quote!(
+                    pub(super) fn describe(value: impl Display) {}
+                )
+            )
+            .contains("`pub(super)`")
+        );
+    }
+
+    /// Narrowing is the point of the option, and matching is not widening.
+    #[test]
+    fn a_macro_no_wider_than_the_function_is_accepted() {
+        let settled = |vis: &str, item: ItemFn| {
+            let args: TokenStream = format!(r#"vis = "{vis}""#)
+                .parse()
+                .expect("the option parses");
+            let input = Input::parse(args, item).expect("the visibility is accepted");
+            render(&input.macro_vis)
+        };
+
+        assert_eq!(
+            settled(
+                "pub(self)",
+                parse_quote!(
+                    pub(crate) fn describe(value: impl Display) {}
+                )
+            ),
+            "pub (self)"
+        );
+        assert_eq!(
+            settled(
+                "pub(crate)",
+                parse_quote!(
+                    pub(crate) fn describe(value: impl Display) {}
+                )
+            ),
+            "pub (crate)"
+        );
+    }
+
+    /// `pub(in path)` cannot be placed on the scale without the module tree, so
+    /// it is left alone rather than guessed at.
+    #[test]
+    fn a_path_restricted_function_is_not_compared() {
+        let args: TokenStream = r#"vis = "pub(crate)""#.parse().expect("the option parses");
+        let input = Input::parse(
+            args,
+            parse_quote!(
+                pub(in crate::a) fn describe(value: impl Display) {}
+            ),
+        )
+        .expect("the visibility is accepted");
+        assert_eq!(render(&input.macro_vis), "pub (crate)");
     }
 
     #[test]
