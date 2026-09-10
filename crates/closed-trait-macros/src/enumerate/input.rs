@@ -368,7 +368,18 @@ fn option(key: &Ident, stream: ParseStream, options: &mut Options, in_group: boo
                         r#"expected a string, as in `{MATCH_ANY}("match_shape")`"#
                     )));
                 }
-                Some(inner.parse::<LitStr>()?.parse::<Ident>()?)
+                let named = inner.parse::<LitStr>()?.parse::<Ident>()?;
+                // Every other list here takes one, so this one does too.
+                if inner.peek(Token![,]) {
+                    inner.parse::<Token![,]>()?;
+                }
+                if !inner.is_empty() {
+                    return Err(inner.error(format!(
+                        "`{MATCH_ANY}` takes one name, which every enum extends: \
+                         `{OWNED}({MATCH_ANY}(..))` names the macro for one of them"
+                    )));
+                }
+                Some(named)
             } else {
                 None
             };
@@ -1286,6 +1297,29 @@ mod tests {
             pub trait Shape {}
         );
         assert!(Input::parse(TokenStream::new(), item).is_ok());
+    }
+
+    /// Every list here takes a trailing comma, including the one-item list a
+    /// `match_any(..)` name is written in.
+    #[test]
+    fn a_trailing_comma_is_accepted_everywhere() {
+        assert_eq!(
+            names(quote!(name = "Shapes", ref(name = "View",),)),
+            names(quote!(name = "Shapes", ref(name = "View")))
+        );
+        assert_eq!(
+            macros(quote!(match_any("walk",),)),
+            macros(quote!(match_any("walk")))
+        );
+        assert!(parse_args(quote!(owned(skip,),)).is_ok());
+    }
+
+    /// One name, which each enum extends. Naming them separately is what the
+    /// groups are for.
+    #[test]
+    fn match_any_takes_one_name() {
+        let message = refused(quote!(match_any("one", "two")));
+        assert!(message.contains("takes one name"), "{message}");
     }
 
     #[test]
