@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use syn::parse::{ParseStream, Parser};
 use syn::{Error, GenericParam, Generics, Ident, ItemTrait, Path, Result, Token, Type};
 
-use crate::util::{lifetimes, name_of, render};
+use crate::util::{lifetimes, mentions, name_of, render};
 
 /// A validated `#[sealed(..)]` invocation.
 pub(crate) struct Input {
@@ -16,6 +16,7 @@ impl Input {
     pub(crate) fn parse(args: TokenStream, item: ItemTrait) -> Result<Self> {
         let Args { types } = Args::parse(args)?;
         undeclared_lifetimes(&types)?;
+        unused_binder_parameters(&types)?;
         unpinned_entries(&types, &item)?;
         mismatched_instantiations(&types, &item)?;
 
@@ -151,6 +152,67 @@ fn undeclared_lifetimes(types: &[SealedType]) -> Result<()> {
                      every `'{name}`.\nWrite `for<'{name}> {ty}` if that is what you meant",
                     ty = render(&entry.ty),
                 ),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+/// A parameter a `for<..>` declares has to be used by the entry.
+///
+/// The generated items declare it either way, so an unused one is at best
+/// nothing and at worst a refusal from rustc: an unconstrained type or const
+/// parameter on an impl is an error, spanned on the attribute rather than on
+/// the binder, while an unconstrained lifetime is quietly allowed and means
+/// nothing at all.
+///
+/// Used means named by the type or by the instantiation, `for<T> Plain:
+/// Store<T>` being the shape that uses one only in the latter. A parameter
+/// named solely in another's bounds does not count: it constrains nothing, and
+/// the impl rustc writes from it is the unconstrained case again.
+fn unused_binder_parameters(types: &[SealedType]) -> Result<()> {
+    for entry in types {
+        let Some(binder) = &entry.binder else {
+            continue;
+        };
+
+        for param in &binder.params {
+            let name = name_of(param);
+            let used = match param {
+                GenericParam::Lifetime(_) => {
+                    let named = |found: Vec<Ident>| found.iter().any(|found| *found == name);
+                    named(lifetimes(&entry.ty))
+                        || entry
+                            .instantiation
+                            .as_ref()
+                            .is_some_and(|path| named(lifetimes(path)))
+                }
+                _ => {
+                    mentions(&entry.ty, &name)
+                        || entry
+                            .instantiation
+                            .as_ref()
+                            .is_some_and(|p| mentions(p, &name))
+                }
+            };
+            if used {
+                continue;
+            }
+
+            let written = match param {
+                GenericParam::Lifetime(_) => format!("'{name}"),
+                _ => name.clone(),
+            };
+            // The instantiation is the other place it could have been used, and
+            // naming it is only possible where there is one.
+            let places = match entry.instantiation.as_ref().map(render) {
+                Some(instantiation) => format!("`{}` or `{instantiation}`", render(&entry.ty)),
+                None => format!("`{}`", render(&entry.ty)),
+            };
+            return Err(Error::new_spanned(
+                param,
+                format!("`{written}` is declared by the `for<..>` but not constrained by {places}"),
             ));
         }
     }
@@ -344,6 +406,63 @@ mod tests {
         );
         let message = refused(quote!(Slice<'a>), item);
         assert!(message.contains("not bound by a `for<..>`"), "{message}");
+    }
+
+    /// A binder declares parameters for the entry to use. One it does not use
+    /// leaves the generated impls declaring something they never constrain,
+    /// which rustc refuses for a type or a const and quietly allows -- meaning
+    /// nothing -- for a lifetime.
+    #[test]
+    fn an_unused_binder_parameter_is_refused() {
+        let message = refused(quote!(for<'a> Bar), plain());
+        assert!(
+            message.contains("`'a` is declared by the `for<..>`"),
+            "{message}"
+        );
+        assert!(message.contains("not constrained by `Bar`"), "{message}");
+
+        let message = refused(quote!(for<T> Held<i32>), plain());
+        assert!(
+            message.contains("`T` is declared by the `for<..>`"),
+            "{message}"
+        );
+
+        let item: ItemTrait = parse_quote!(
+            pub trait Width<const M: usize> {}
+        );
+        let message = refused(quote!(for<const N: usize> Row: Width<3>), item);
+        assert!(
+            message.contains("`N` is declared by the `for<..>`"),
+            "{message}"
+        );
+    }
+
+    /// The instantiation counts as use, which is the whole of what
+    /// `for<T> Plain: Store<T>` says.
+    #[test]
+    fn a_parameter_used_only_in_the_instantiation_is_accepted() {
+        let item: ItemTrait = parse_quote!(
+            pub trait Store<T> {}
+        );
+        assert_eq!(
+            accepted(quote!(for<T> Plain: Store<T>), item.clone()).len(),
+            1
+        );
+        assert_eq!(
+            accepted(quote!(for<'a> Plain: Store<&'a str>), item).len(),
+            1
+        );
+    }
+
+    /// A name used only in another parameter's bounds constrains nothing, so
+    /// the impl written from it is the unconstrained case again.
+    #[test]
+    fn a_parameter_used_only_in_a_bound_is_refused() {
+        let message = refused(quote!(for<T, U: Into<T>> Held<U>), plain());
+        assert!(
+            message.contains("`T` is declared by the `for<..>`"),
+            "{message}"
+        );
     }
 
     #[test]

@@ -26,6 +26,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is written, and only the entry's own `for<..>` declares a parameter.
 - **Breaking.** `#[enumerate]`'s option values that name an item are written as
   strings: `name = "Shapes"` and `match_any("walk")`.
+- **Breaking.** A parameter a `for<..>` declares has to be used by the entry,
+  in its type or in its instantiation. An unused type or const was rustc's
+  `unconstrained parameter` error spanned on the attribute; an unused lifetime
+  was accepted and meant nothing.
 - **Breaking.** An option, a group, or an attribute written twice is an error.
   Previously `match_any` took the last, `no_bridge` and `skip` did nothing,
   two `attrs` were merged onto the enum, and a repeated `#[sealed(..)]` or
