@@ -1,0 +1,6 @@
+error: `#[enumerate]` is written twice, and each one generates the enums.
+       Write it once, above the `#[sealed(..)]` it reads
+ --> tests/ui/enumerate_rejects_two_enumerate_attributes.rs:7:1
+  |
+7 | #[enumerate]
+  | ^^^^^^^^^^^^

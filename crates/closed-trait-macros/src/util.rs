@@ -111,6 +111,27 @@ pub(crate) fn rename(tokens: &impl ToTokens, renames: &[(String, TokenStream)]) 
 /// `TokenStream`'s own `to_string` separates every token, so a type comes out
 /// as `Boxed < T >`; error messages quote types back at the reader, and that
 /// spelling is distracting.
+/// Whether an attribute is plausibly one of this crate's, by the spellings it is
+/// usually reached under: bare, or qualified with the crate exporting it.
+///
+/// It is a guess, and cannot be anything else: an attribute macro is never told
+/// the path it was invoked under, so it has no name of its own to compare
+/// against. Every spelling here can name something else -- a bare one under
+/// `use other::sealed`, a qualified one under a `use` or a renamed dependency --
+/// and an import under a different name is missed entirely. What it costs is
+/// bounded either way: a miss leaves rustc to report the duplicate items, and a
+/// false positive is escaped by qualifying the other crate's attribute.
+pub(crate) fn ours(attr: &syn::Attribute, name: &str) -> bool {
+    let path = attr.path();
+    if path.is_ident(name) {
+        return true;
+    }
+    path.segments.last().is_some_and(|last| last.ident == name)
+        && path.segments.first().is_some_and(|first| {
+            first.ident == "closed_trait" || first.ident == "closed_trait_macros"
+        })
+}
+
 pub(crate) fn render(tokens: &impl ToTokens) -> String {
     tokens
         .to_token_stream()

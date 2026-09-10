@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, format_ident, quote};
 use syn::ext::IdentExt;
@@ -8,11 +10,21 @@ use syn::{
 };
 
 use crate::sealed::{self, SealedType};
-use crate::util::{argument, lifetimes, mentions, name_of, rename, render, snake_case};
+use crate::util::{argument, lifetimes, mentions, name_of, ours, rename, render, snake_case};
 
+// The options, named once so that a match arm and the messages mentioning it
+// cannot drift apart.
+const ATTRS: &str = "attrs";
+const CRATE: &str = "crate";
 const MATCH_ANY: &str = "match_any";
+const NAME: &str = "name";
 const NO_BRIDGE: &str = "no_bridge";
 const SKIP: &str = "skip";
+
+// The groups, which are options taking options.
+const OWNED: &str = "owned";
+const REF: &str = "ref";
+const MUT: &str = "mut";
 
 /// Which of the three enums a group of options is about.
 #[derive(Clone, Copy, PartialEq)]
@@ -85,6 +97,7 @@ pub(crate) struct Variant {
 impl Input {
     pub(crate) fn parse(args: TokenStream, item: ItemTrait) -> Result<Self> {
         let args = parse_args(args)?;
+        repeated_attribute(&item)?;
 
         // A `for<..>` names parameters the trait never declared, and the enum can
         // only be named in the trait's own. Every entry is rewritten into those
@@ -241,6 +254,9 @@ fn parse_args(args: TokenStream) -> Result<Args> {
         return Ok(parsed);
     }
 
+    // Written twice, a group would silently merge into the first rather than
+    // replace it, which is neither what either spelling says.
+    let mut groups = HashSet::new();
     let parser = |stream: ParseStream| -> Result<()> {
         while !stream.is_empty() {
             // `parse_any`, because `crate`, `ref` and `mut` are all keywords
@@ -250,12 +266,18 @@ fn parse_args(args: TokenStream) -> Result<Args> {
 
             match name.as_str() {
                 // A group: the same options, but only for one of the three.
-                "owned" | "ref" | "mut" => {
+                OWNED | REF | MUT => {
                     let inner;
                     syn::parenthesized!(inner in stream);
+                    if !groups.insert(name.clone()) {
+                        return Err(Error::new_spanned(
+                            &key,
+                            format!("duplicate `{name}(..)` group"),
+                        ));
+                    }
                     let target = match name.as_str() {
-                        "owned" => &mut parsed.owned,
-                        "ref" => &mut parsed.shared,
+                        OWNED => &mut parsed.owned,
+                        REF => &mut parsed.shared,
                         _ => &mut parsed.unique,
                     };
                     parse_options(&inner, target, true)?;
@@ -263,19 +285,19 @@ fn parse_args(args: TokenStream) -> Result<Args> {
                 // A string for the same reason `attrs` is one: it delimits the
                 // path, so a malformed value says so instead of derailing the
                 // rest of the list.
-                "crate" => {
+                CRATE => {
                     stream.parse::<Token![=]>()?;
                     if !stream.peek(LitStr) {
-                        return Err(
-                            stream.error(r#"expected a string, as in `crate = "::my_reexport"`"#)
-                        );
+                        return Err(stream.error(format!(
+                            r#"expected a string, as in `{CRATE} = "::my_reexport"`"#
+                        )));
                     }
                     let literal = stream.parse::<LitStr>()?;
                     let value = literal.parse::<Path>().map_err(|_| {
                         Error::new_spanned(&literal, "expected a path to the `closed-trait` crate")
                     })?;
                     if parsed.krate.replace(value).is_some() {
-                        return Err(Error::new_spanned(&key, "duplicate `crate` option"));
+                        return Err(duplicate(&key));
                     }
                 }
                 _ => option(&key, stream, &mut parsed.grouped, false)?,
@@ -296,9 +318,11 @@ fn parse_args(args: TokenStream) -> Result<Args> {
     if let Some(span) = parsed.shared.no_bridge {
         return Err(Error::new(
             span,
-            "`no_bridge` has nothing to leave out here: no conversion is written on the \
-             borrowing enum's shared form.\nWrite it on `owned` to drop `as_ref` and `as_mut` \
-             from the owned enum, or on `mut` to drop the reborrowing `as_ref`",
+            format!(
+                "`{NO_BRIDGE}` has nothing to leave out here: no conversion is written on the \
+                 borrowing enum's shared form.\nWrite it on `{OWNED}` to drop `as_ref` and \
+                 `as_mut` from the owned enum, or on `{MUT}` to drop the reborrowing `as_ref`"
+            ),
         ));
     }
 
@@ -319,57 +343,79 @@ fn parse_options(stream: ParseStream, options: &mut Options, in_group: bool) -> 
     Ok(())
 }
 
+/// An option written twice, which is a mistake rather than an override: the
+/// second would either be ignored or merged into the first, and neither is what
+/// writing it twice says.
+fn duplicate(key: &Ident) -> Error {
+    Error::new_spanned(key, format!("duplicate `{key}` option"))
+}
+
 /// One option, wherever it was written.
 fn option(key: &Ident, stream: ParseStream, options: &mut Options, in_group: bool) -> Result<()> {
     match key.to_string().as_str() {
-        SKIP if in_group => options.skip = true,
+        SKIP if in_group => {
+            if options.skip {
+                return Err(duplicate(key));
+            }
+            options.skip = true;
+        }
         MATCH_ANY => {
             let named = if stream.peek(syn::token::Paren) {
                 let inner;
                 syn::parenthesized!(inner in stream);
                 if !inner.peek(LitStr) {
-                    return Err(
-                        inner.error(r#"expected a string, as in `match_any("match_shape")`"#)
-                    );
+                    return Err(inner.error(format!(
+                        r#"expected a string, as in `{MATCH_ANY}("match_shape")`"#
+                    )));
                 }
                 Some(inner.parse::<LitStr>()?.parse::<Ident>()?)
             } else {
                 None
             };
-            options.match_any = Some(named);
+            if options.match_any.replace(named).is_some() {
+                return Err(duplicate(key));
+            }
         }
-        NO_BRIDGE => options.no_bridge = Some(key.span()),
+        NO_BRIDGE => {
+            if options.no_bridge.replace(key.span()).is_some() {
+                return Err(duplicate(key));
+            }
+        }
         // A string, as every option carrying a name or a visibility is written
         // across these macros, so one spelling covers them all.
-        "name" => {
+        NAME => {
             stream.parse::<Token![=]>()?;
             if !stream.peek(LitStr) {
-                return Err(stream.error(r#"expected a string, as in `name = "Shapes"`"#));
+                return Err(
+                    stream.error(format!(r#"expected a string, as in `{NAME} = "Shapes"`"#))
+                );
             }
             let value = stream.parse::<LitStr>()?.parse::<Ident>()?;
             if options.name.replace(value).is_some() {
-                return Err(Error::new_spanned(key, "duplicate `name` option"));
+                return Err(duplicate(key));
             }
         }
         // Only ever inside a group. What is valid differs between the three --
         // the shared enum already derives `Copy`, the unique one cannot derive
         // `Clone` at all -- so spreading one spelling across them would be a
         // trap rather than a convenience.
-        "attrs" if !in_group => {
+        ATTRS if !in_group => {
             return Err(Error::new_spanned(
                 key,
-                "`attrs` applies to one enum at a time, as in `owned(attrs = \"..\")`",
+                format!(
+                    r#"`{ATTRS}` applies to one enum at a time, as in `{OWNED}({ATTRS} = "..")`"#
+                ),
             ));
         }
         // A string, so the `#[..]` inside is unambiguous to both the parser and
         // to tooling. `parse_with` keeps error spans inside the literal rather
         // than on the attribute as a whole.
-        "attrs" => {
+        ATTRS => {
             stream.parse::<Token![=]>()?;
             if !stream.peek(LitStr) {
-                return Err(stream.error(
-                    r##"expected a string of attributes, as in `attrs = "#[derive(Debug)]"`"##,
-                ));
+                return Err(stream.error(format!(
+                    r##"expected a string of attributes, as in `{ATTRS} = "#[derive(Debug)]"`"##
+                )));
             }
             let literal = stream.parse::<LitStr>()?;
             let attrs = literal.parse_with(Attribute::parse_outer)?;
@@ -377,17 +423,24 @@ fn option(key: &Ident, stream: ParseStream, options: &mut Options, in_group: boo
             if let Some(doc) = attrs.iter().find(|attr| attr.path().is_ident("doc")) {
                 return Err(Error::new_spanned(
                     doc,
-                    "`attrs` cannot document the enum: its documentation is generated \
-                     and is the same for every sealed trait",
+                    format!(
+                        "`{ATTRS}` cannot document the enum: its documentation is generated \
+                         and is the same for every sealed trait"
+                    ),
                 ));
             }
-            options.attrs.get_or_insert_default().extend(attrs);
+            if options.attrs.replace(attrs).is_some() {
+                return Err(duplicate(key));
+            }
         }
         unknown => {
             let where_ = if in_group {
-                "expected `skip`, `name`, `match_any`, `no_bridge` or `attrs`"
+                format!("expected `{SKIP}`, `{NAME}`, `{MATCH_ANY}`, `{NO_BRIDGE}` or `{ATTRS}`")
             } else {
-                "expected `owned`, `ref`, `mut`, `name`, `match_any`, `no_bridge` or `crate`"
+                format!(
+                    "expected `{OWNED}`, `{REF}`, `{MUT}`, `{NAME}`, `{MATCH_ANY}`, \
+                     `{NO_BRIDGE}` or `{CRATE}`"
+                )
             };
             return Err(Error::new_spanned(
                 key,
@@ -396,6 +449,33 @@ fn option(key: &Ident, stream: ParseStream, options: &mut Options, in_group: boo
         }
     }
     Ok(())
+}
+
+/// `#[enumerate]` written twice, which is one enum too many.
+///
+/// An attribute is handed the item with the attributes *below* it still
+/// attached, so a second one is visible from the first. Only the spellings this
+/// crate is reached by are read as a duplicate: another crate's `enumerate`
+/// would be refused here for no reason, and rustc reports the duplicate enums
+/// anyway.
+///
+/// Refusing here stops *this* expansion and leaves the one below to run, which
+/// is the opposite of what `#[sealed]` does with its own duplicate, and for the
+/// opposite reason: what this macro writes is named by the caller, so dropping
+/// both would leave every use of `AnyShape` unresolved, while the enums the
+/// duplicate would have written are the same ones.
+fn repeated_attribute(item: &ItemTrait) -> Result<()> {
+    match item.attrs.iter().find(|attr| ours(attr, "enumerate")) {
+        Some(attr) => Err(Error::new_spanned(
+            attr,
+            format!(
+                "`#[{}]` is written twice, and each one generates the enums.\nWrite it once, \
+                 above the `#[sealed(..)]` it reads",
+                render(attr.path()),
+            ),
+        )),
+        None => Ok(()),
+    }
 }
 
 /// `#[enumerate]` has to sit above it.
@@ -415,6 +495,23 @@ fn sealed_types(item: &ItemTrait) -> Result<Vec<SealedType>> {
                 .is_some_and(|segment| segment.ident == "sealed")
         })
         .collect();
+
+    // Two lists are one too many, and saying so here matters as much as saying it
+    // from `#[sealed]`: this macro runs first, and anything it generates from one
+    // of the lists would refuse every type in the other.
+    let mut seen = HashSet::new();
+    for attr in &candidates {
+        let path = render(attr.path());
+        if !seen.insert(path.clone()) {
+            return Err(Error::new_spanned(
+                attr,
+                format!(
+                    "`#[{path}(..)]` is written twice, and a trait is sealed to one list.\nWrite \
+                     one attribute listing every permitted type"
+                ),
+            ));
+        }
+    }
 
     let bare = candidates
         .iter()
@@ -1109,6 +1206,88 @@ mod tests {
         }
     }
 
+    /// Every option is written at most once. A second one would be ignored,
+    /// silently win over the first, or merge into it, and none of the three is
+    /// what writing it twice says.
+    #[test]
+    fn every_option_forbids_duplicates() {
+        let cases = [
+            (quote!(name = "A", name = "B"), "name"),
+            (quote!(crate = "::a", crate = "::b"), "crate"),
+            (quote!(match_any("a"), match_any("b")), "match_any"),
+            (quote!(no_bridge, no_bridge), "no_bridge"),
+            (quote!(owned(skip, skip)), "skip"),
+            (
+                quote!(owned(
+                    attrs = "#[derive(Debug)]",
+                    attrs = "#[non_exhaustive]"
+                )),
+                "attrs",
+            ),
+        ];
+
+        for (attr, option) in cases {
+            let message = refused(attr);
+            assert!(
+                message.contains(&format!("duplicate `{option}`")),
+                "`{option}` written twice gave {message}"
+            );
+        }
+    }
+
+    /// The groups too: a second one would merge into the first rather than
+    /// replace it.
+    #[test]
+    fn every_group_forbids_duplicates() {
+        for group in ["owned", "ref", "mut"] {
+            let attr: TokenStream = format!("{group}(no_bridge), {group}(name = \"A\")")
+                .parse()
+                .expect("the options parse");
+            let message = refused(attr);
+            assert!(
+                message.contains(&format!("duplicate `{group}(..)` group")),
+                "`{group}` written twice gave {message}"
+            );
+        }
+    }
+
+    /// An attribute sees the ones written below it, so a second `#[enumerate]`
+    /// is visible from the first. Only the spellings this crate is reached by
+    /// count as one.
+    #[test]
+    fn a_second_enumerate_attribute_is_refused() {
+        let refused = |item: ItemTrait| match Input::parse(TokenStream::new(), item) {
+            Err(error) => error.to_string(),
+            Ok(_) => panic!("expected the attribute to be refused"),
+        };
+
+        let message = refused(parse_quote!(
+            #[enumerate]
+            #[sealed(Square)]
+            pub trait Shape {}
+        ));
+        assert!(message.contains("is written twice"), "{message}");
+
+        let message = refused(parse_quote!(
+            #[closed_trait::enumerate]
+            #[sealed(Square)]
+            pub trait Shape {}
+        ));
+        assert!(message.contains("is written twice"), "{message}");
+    }
+
+    /// Another crate's `enumerate` is not this one's, and rustc reports the
+    /// duplicate enums if it turns out to be.
+    #[test]
+    fn another_crates_enumerate_is_left_alone() {
+        let item: ItemTrait = parse_quote!(
+            #[other::enumerate]
+            #[sealed(Square)]
+            pub trait Shape {}
+        );
+        assert!(Input::parse(TokenStream::new(), item).is_ok());
+    }
+
     #[test]
     fn bare_attrs_is_refused() {
         assert!(refused(quote!(attrs = "#[derive(Debug)]")).contains("one enum at a time"));
@@ -1119,11 +1298,6 @@ mod tests {
         assert!(refused(quote!(skip)).contains("unknown option `skip`"));
     }
 
-    #[test]
-    fn a_repeated_name_is_refused() {
-        assert!(refused(quote!(name = "A", name = "B")).contains("duplicate `name`"));
-    }
-
     /// A name is written as a string, as it is for every other macro here, so
     /// the bare identifier is refused with the spelling that works.
     #[test]
@@ -1131,6 +1305,5 @@ mod tests {
         assert!(refused(quote!(name = Shapes)).contains(r#"`name = "Shapes"`"#));
         assert!(refused(quote!(ref(name = View))).contains(r#"`name = "Shapes"`"#));
         assert!(refused(quote!(match_any(walk))).contains(r#"`match_any("match_shape")`"#));
-        assert!(refused(quote!(crate = "::a", crate = "::b")).contains("duplicate `crate`"));
     }
 }
