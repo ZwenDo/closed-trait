@@ -1,0 +1,11 @@
+error: `'a` is declared by the `for<..>` but not constrained by `Bar`
+ --> tests/ui/sealed_rejects_an_unused_binder_parameter.rs:7:14
+  |
+7 | #[sealed(for<'a> Bar)]
+  |              ^^
+
+error: `T` is declared by the `for<..>` but not constrained by `Held<i32>`
+  --> tests/ui/sealed_rejects_an_unused_binder_parameter.rs:16:14
+   |
+16 | #[sealed(for<T> Held<i32>)]
+   |              ^
