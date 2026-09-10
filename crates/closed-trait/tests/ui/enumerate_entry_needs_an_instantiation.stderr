@@ -1,0 +1,6 @@
+error: `Plain` does not say which `Store` it implements, so nothing can check that it implements `Store` at all.
+       Write `Plain: Store<..>` with the arguments it implements
+ --> tests/ui/enumerate_entry_needs_an_instantiation.rs:7:10
+  |
+7 | #[sealed(Plain, for<T> Boxed<T>: Store<T>)]
+  |          ^^^^^

@@ -1,11 +1,9 @@
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::{
-    GenericArgument, GenericParam, Ident, ItemTrait, Lifetime, Path, PathArguments, parse_quote,
-};
+use syn::{GenericArgument, GenericParam, ItemTrait, Path, PathArguments, parse_quote};
 
 use super::input::{Input, SealedType};
-use crate::util::{argument, lifetimes, mentions, name_of, render};
+use crate::util::{argument, fresh, name_of, render};
 
 pub(crate) fn expand(input: Input) -> TokenStream {
     let Input { mut item, types } = input;
@@ -56,8 +54,8 @@ pub(crate) fn expand(input: Input) -> TokenStream {
     let impls: Vec<TokenStream> = types
         .iter()
         .filter_map(|entry| {
-            let generics = declarations(&params(entry, &item));
-            let arguments = pinned(entry, &item);
+            let generics = declarations(&params(entry));
+            let arguments = pinned(entry);
             let arguments = (!arguments.is_empty()).then(|| quote!(<#(#arguments),*>));
             let ty = &entry.ty;
 
@@ -127,56 +125,18 @@ pub(crate) fn expand(input: Input) -> TokenStream {
 
 /// The parameters an entry's generated items have to declare.
 ///
-/// Three sources, in order: the entry's own `for<..>` binder, the trait's
-/// parameters that the type mentions, and any remaining named lifetimes.
-///
-/// A bare name is a parameter only if one of the first two declares it, so
-/// `Boxed<T>` means every `Boxed` under `trait Store<T>` or after `for<T>`, and
-/// whatever concrete `T` is in scope otherwise.
-///
-/// The third source only ever sees `'static` and `'_`: a named lifetime that
-/// neither the trait nor a binder declares is refused when the input is
-/// parsed. Accepting it would make `Bar<'a>` mean the trait's lifetime or
-/// every lifetime depending on what the trait happened to call its parameter,
-/// so renaming that parameter would change what is sealed.
-fn params(entry: &SealedType, item: &ItemTrait) -> Vec<(String, TokenStream)> {
-    let ty = &entry.ty;
-    let named = lifetimes(ty);
-    let mut params: Vec<(String, TokenStream)> = Vec::new();
-    let declared = |params: &[(String, TokenStream)], name: &str| {
-        params.iter().any(|(known, _)| known == name)
-    };
-
-    if let Some(binder) = &entry.binder {
-        for param in &binder.params {
-            params.push((name_of(param), quote!(#param)));
-        }
-    }
-
-    for param in &item.generics.params {
-        let name = name_of(param);
-        if declared(&params, &name) {
-            continue;
-        }
-        let used = match param {
-            GenericParam::Lifetime(param) => named.contains(&param.lifetime.ident),
-            GenericParam::Type(_) | GenericParam::Const(_) => mentions(ty, &name),
-        };
-        if used {
-            params.push((name, quote!(#param)));
-        }
-    }
-
-    for lifetime in named {
-        let name = lifetime.to_string();
-        if declared(&params, &name) {
-            continue;
-        }
-        let lifetime = Lifetime::new(&format!("'{lifetime}"), lifetime.span());
-        params.push((name, quote!(#lifetime)));
-    }
-
-    params
+/// Only its own `for<..>` binder declares them. A bare name in an entry is
+/// whatever is in scope where the attribute is written, never the trait's
+/// parameter of that name -- otherwise `Impl<Bug>` under `trait Fooo<Bug>` would
+/// quietly mean every `Impl`, and a `struct Bug` beside it would be shadowed by
+/// a name the trait happened to choose.
+fn params(entry: &SealedType) -> Vec<(String, TokenStream)> {
+    entry
+        .binder
+        .iter()
+        .flat_map(|binder| binder.params.iter())
+        .map(|param| (name_of(param), quote!(#param)))
+        .collect()
 }
 
 fn declarations(params: &[(String, TokenStream)]) -> Option<TokenStream> {
@@ -188,10 +148,10 @@ fn declarations(params: &[(String, TokenStream)]) -> Option<TokenStream> {
 /// stays accurate rather than merely permissive.
 ///
 /// Every entry is checked. The trait's type and const parameters have to be
-/// supplied for it, which the entry guarantees by either naming them itself, as
-/// `Boxed<T>` does under `trait Store<T>`, or annotating its instantiation, as
-/// in `Plain: Store<i32>`. An entry that does neither is refused when the input
-/// is parsed, so there is nothing to skip here.
+/// supplied for it, which the entry's instantiation says: `Plain: Store<i32>`
+/// pins them, `for<U> Boxed<U>: Store<U>` names what its binder declared. An
+/// entry without one is refused when the input is parsed unless the trait has
+/// none to supply, so there is nothing to skip here.
 ///
 /// Lifetimes never need supplying, and not merely because inference usually
 /// copes: a type cannot implement the same trait at two different lifetimes,
@@ -205,16 +165,6 @@ fn assertion(item: &ItemTrait, types: &[SealedType]) -> Option<TokenStream> {
     let trait_arguments = (!trait_params.is_empty()).then(|| quote!(<#(#names),*>));
     let trait_params = (!trait_params.is_empty()).then(|| quote!(#trait_params,));
 
-    // Type and const parameters have to be supplied by name; lifetimes are
-    // always inferable and so never appear in the turbofish.
-    let supplied: Vec<String> = item
-        .generics
-        .params
-        .iter()
-        .filter(|param| !matches!(param, GenericParam::Lifetime(_)))
-        .map(name_of)
-        .collect();
-
     // One function per entry, so a quantified type has somewhere to declare its
     // parameters. Taking the type by reference brings its own well-formedness
     // in as an implied bound, which is what lets `Pair<'a, T>` be checked
@@ -225,18 +175,12 @@ fn assertion(item: &ItemTrait, types: &[SealedType]) -> Option<TokenStream> {
         .iter()
         .enumerate()
         .map(|(index, entry)| {
-            let params = params(entry, item);
+            let params = params(entry);
+            // Without an annotation the trait has no parameters to supply,
+            // which parsing has already insisted on.
             let arguments = match &entry.instantiation {
                 Some(path) => instantiation(path),
-                // Without an annotation the type names the trait's parameters
-                // itself, which parsing has already insisted on.
-                None => supplied
-                    .iter()
-                    .map(|name| {
-                        let name = Ident::new(name, Span::call_site());
-                        quote!(#name)
-                    })
-                    .collect(),
+                None => Vec::new(),
             };
 
             let check = format_ident!("check_{index}");
@@ -254,10 +198,14 @@ fn assertion(item: &ItemTrait, types: &[SealedType]) -> Option<TokenStream> {
         return None;
     }
 
+    // Named around whatever the trait declares: `assert` sits inside the trait's
+    // own parameters, so a fixed name would collide with a trait that has one.
+    let probe = fresh(item.generics.params.iter().map(name_of), "S");
+
     Some(quote! {
         #[allow(dead_code)]
         const _: () = {
-            fn assert<#trait_params S: #ident #trait_arguments + ?Sized>(_: &S) {}
+            fn assert<#trait_params #probe: #ident #trait_arguments + ?Sized>(_: &#probe) {}
             #(#checks)*
         };
     })
@@ -280,20 +228,12 @@ fn marker_param(param: &GenericParam) -> Option<TokenStream> {
     }
 }
 
-/// The trait's type and const parameters as one entry supplies them.
-///
-/// Either the entry annotates its instantiation, or the type names them itself,
-/// which parsing has already insisted on.
-fn pinned(entry: &SealedType, item: &ItemTrait) -> Vec<TokenStream> {
+/// The trait's type and const parameters as the entry's instantiation supplies
+/// them, or none where the trait has none and the entry wrote no instantiation.
+fn pinned(entry: &SealedType) -> Vec<TokenStream> {
     match &entry.instantiation {
         Some(path) => instantiation(path),
-        None => item
-            .generics
-            .params
-            .iter()
-            .filter(|param| !matches!(param, GenericParam::Lifetime(_)))
-            .map(argument)
-            .collect(),
+        None => Vec::new(),
     }
 }
 

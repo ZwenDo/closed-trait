@@ -1,0 +1,5 @@
+error: unknown option `nonsense`, expected `vis` or `name`
+ --> tests/ui/if_implements_fn_unknown_option.rs:4:20
+  |
+4 | #[if_implements_fn(nonsense = "try_it")]
+  |                    ^^^^^^^^

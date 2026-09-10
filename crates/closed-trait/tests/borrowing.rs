@@ -106,7 +106,7 @@ mod generic {
     pub struct Boxed<T>(pub T);
 
     #[enumerate(match_any)]
-    #[sealed(Boxed<T>)]
+    #[sealed(for<T> Boxed<T>: Store<T>)]
     pub trait Store<T> {
         fn get(&self) -> &T;
     }

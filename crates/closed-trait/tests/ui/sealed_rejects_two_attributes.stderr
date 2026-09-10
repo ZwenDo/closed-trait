@@ -1,0 +1,6 @@
+error: `#[sealed(..)]` is written twice, and a trait is sealed to one list.
+       Write one attribute listing every permitted type
+  --> tests/ui/sealed_rejects_two_attributes.rs:10:1
+   |
+10 | #[sealed(Circle)]
+   | ^^^^^^^^^^^^^^^^^

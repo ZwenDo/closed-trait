@@ -1,0 +1,5 @@
+error: this has to be a free function, not a method: the macro it generates sits beside it, and a `macro_rules!` cannot be defined in an `impl` or a `trait`
+ --> tests/ui/if_implements_fn_rejects_method.rs:8:17
+  |
+8 |     fn describe(&self, value: impl Display) -> String {
+  |                 ^

@@ -1,18 +1,30 @@
+use std::collections::HashSet;
+
 use proc_macro2::{Span, TokenStream};
-use quote::{format_ident, quote};
+use quote::{ToTokens, format_ident, quote};
 use syn::ext::IdentExt;
 use syn::parse::{ParseStream, Parser};
 use syn::{
-    Attribute, Error, GenericParam, Ident, ItemTrait, LitStr, Path, PathArguments, Result, Token,
-    Type, parse_quote,
+    Attribute, Error, GenericArgument, GenericParam, Generics, Ident, ItemTrait, LitStr, Meta,
+    Path, PathArguments, Result, Token, Type, parse_quote,
 };
 
 use crate::sealed::{self, SealedType};
-use crate::util::{argument, lifetimes, mentions, name_of, render, snake_case};
+use crate::util::{argument, lifetimes, mentions, name_of, ours, rename, render, snake_case};
 
+// The options, named once so that a match arm and the messages mentioning it
+// cannot drift apart.
+const ATTRS: &str = "attrs";
+const CRATE: &str = "crate";
 const MATCH_ANY: &str = "match_any";
+const NAME: &str = "name";
 const NO_BRIDGE: &str = "no_bridge";
 const SKIP: &str = "skip";
+
+// The groups, which are options taking options.
+const OWNED: &str = "owned";
+const REF: &str = "ref";
+const MUT: &str = "mut";
 
 /// Which of the three enums a group of options is about.
 #[derive(Clone, Copy, PartialEq)]
@@ -85,8 +97,16 @@ pub(crate) struct Variant {
 impl Input {
     pub(crate) fn parse(args: TokenStream, item: ItemTrait) -> Result<Self> {
         let args = parse_args(args)?;
+        repeated_attribute(&item)?;
 
-        let entries = sealed_types(&item)?;
+        // A `for<..>` names parameters the trait never declared, and the enum can
+        // only be named in the trait's own. Every entry is rewritten into those
+        // before anything reads it, so nothing downstream has to know the
+        // difference.
+        let entries = sealed_types(&item)?
+            .into_iter()
+            .map(|entry| in_traits_terms(entry, &item))
+            .collect::<Result<Vec<_>>>()?;
         let shared_params = enum_parameters(&item, &entries);
         let variants = entries
             .iter()
@@ -234,6 +254,9 @@ fn parse_args(args: TokenStream) -> Result<Args> {
         return Ok(parsed);
     }
 
+    // Written twice, a group would silently merge into the first rather than
+    // replace it, which is neither what either spelling says.
+    let mut groups = HashSet::new();
     let parser = |stream: ParseStream| -> Result<()> {
         while !stream.is_empty() {
             // `parse_any`, because `crate`, `ref` and `mut` are all keywords
@@ -243,12 +266,18 @@ fn parse_args(args: TokenStream) -> Result<Args> {
 
             match name.as_str() {
                 // A group: the same options, but only for one of the three.
-                "owned" | "ref" | "mut" => {
+                OWNED | REF | MUT => {
                     let inner;
                     syn::parenthesized!(inner in stream);
+                    if !groups.insert(name.clone()) {
+                        return Err(Error::new_spanned(
+                            &key,
+                            format!("duplicate `{name}(..)` group"),
+                        ));
+                    }
                     let target = match name.as_str() {
-                        "owned" => &mut parsed.owned,
-                        "ref" => &mut parsed.shared,
+                        OWNED => &mut parsed.owned,
+                        REF => &mut parsed.shared,
                         _ => &mut parsed.unique,
                     };
                     parse_options(&inner, target, true)?;
@@ -256,19 +285,19 @@ fn parse_args(args: TokenStream) -> Result<Args> {
                 // A string for the same reason `attrs` is one: it delimits the
                 // path, so a malformed value says so instead of derailing the
                 // rest of the list.
-                "crate" => {
+                CRATE => {
                     stream.parse::<Token![=]>()?;
                     if !stream.peek(LitStr) {
-                        return Err(
-                            stream.error(r#"expected a string, as in `crate = "::my_reexport"`"#)
-                        );
+                        return Err(stream.error(format!(
+                            r#"expected a string, as in `{CRATE} = "::my_reexport"`"#
+                        )));
                     }
                     let literal = stream.parse::<LitStr>()?;
                     let value = literal.parse::<Path>().map_err(|_| {
                         Error::new_spanned(&literal, "expected a path to the `closed-trait` crate")
                     })?;
                     if parsed.krate.replace(value).is_some() {
-                        return Err(Error::new_spanned(&key, "duplicate `crate` option"));
+                        return Err(duplicate(&key));
                     }
                 }
                 _ => option(&key, stream, &mut parsed.grouped, false)?,
@@ -289,9 +318,11 @@ fn parse_args(args: TokenStream) -> Result<Args> {
     if let Some(span) = parsed.shared.no_bridge {
         return Err(Error::new(
             span,
-            "`no_bridge` has nothing to leave out here: no conversion is written on the \
-             borrowing enum's shared form.\nWrite it on `owned` to drop `as_ref` and `as_mut` \
-             from the owned enum, or on `mut` to drop the reborrowing `as_ref`",
+            format!(
+                "`{NO_BRIDGE}` has nothing to leave out here: no conversion is written on the \
+                 borrowing enum's shared form.\nWrite it on `{OWNED}` to drop `as_ref` and \
+                 `as_mut` from the owned enum, or on `{MUT}` to drop the reborrowing `as_ref`"
+            ),
         ));
     }
 
@@ -312,49 +343,90 @@ fn parse_options(stream: ParseStream, options: &mut Options, in_group: bool) -> 
     Ok(())
 }
 
+/// An option written twice, which is a mistake rather than an override: the
+/// second would either be ignored or merged into the first, and neither is what
+/// writing it twice says.
+fn duplicate(key: &Ident) -> Error {
+    Error::new_spanned(key, format!("duplicate `{key}` option"))
+}
+
 /// One option, wherever it was written.
 fn option(key: &Ident, stream: ParseStream, options: &mut Options, in_group: bool) -> Result<()> {
     match key.to_string().as_str() {
-        SKIP if in_group => options.skip = true,
+        SKIP if in_group => {
+            if options.skip {
+                return Err(duplicate(key));
+            }
+            options.skip = true;
+        }
         MATCH_ANY => {
             let named = if stream.peek(syn::token::Paren) {
                 let inner;
                 syn::parenthesized!(inner in stream);
-                Some(inner.parse::<Ident>()?)
+                if !inner.peek(LitStr) {
+                    return Err(inner.error(format!(
+                        r#"expected a string, as in `{MATCH_ANY}("match_shape")`"#
+                    )));
+                }
+                let named = inner.parse::<LitStr>()?.parse::<Ident>()?;
+                // Every other list here takes one, so this one does too.
+                if inner.peek(Token![,]) {
+                    inner.parse::<Token![,]>()?;
+                }
+                if !inner.is_empty() {
+                    return Err(inner.error(format!(
+                        "`{MATCH_ANY}` takes one name, which every enum extends: \
+                         `{OWNED}({MATCH_ANY}(..))` names the macro for one of them"
+                    )));
+                }
+                Some(named)
             } else {
                 None
             };
-            options.match_any = Some(named);
+            if options.match_any.replace(named).is_some() {
+                return Err(duplicate(key));
+            }
         }
-        NO_BRIDGE => options.no_bridge = Some(key.span()),
-        // A bare identifier: it names an item rather than carrying syntax that
-        // needs delimiting.
-        "name" => {
+        NO_BRIDGE => {
+            if options.no_bridge.replace(key.span()).is_some() {
+                return Err(duplicate(key));
+            }
+        }
+        // A string, as every option carrying a name or a visibility is written
+        // across these macros, so one spelling covers them all.
+        NAME => {
             stream.parse::<Token![=]>()?;
-            let value = stream.parse::<Ident>()?;
+            if !stream.peek(LitStr) {
+                return Err(
+                    stream.error(format!(r#"expected a string, as in `{NAME} = "Shapes"`"#))
+                );
+            }
+            let value = stream.parse::<LitStr>()?.parse::<Ident>()?;
             if options.name.replace(value).is_some() {
-                return Err(Error::new_spanned(key, "duplicate `name` option"));
+                return Err(duplicate(key));
             }
         }
         // Only ever inside a group. What is valid differs between the three --
         // the shared enum already derives `Copy`, the unique one cannot derive
         // `Clone` at all -- so spreading one spelling across them would be a
         // trap rather than a convenience.
-        "attrs" if !in_group => {
+        ATTRS if !in_group => {
             return Err(Error::new_spanned(
                 key,
-                "`attrs` applies to one enum at a time, as in `owned(attrs = \"..\")`",
+                format!(
+                    r#"`{ATTRS}` applies to one enum at a time, as in `{OWNED}({ATTRS} = "..")`"#
+                ),
             ));
         }
         // A string, so the `#[..]` inside is unambiguous to both the parser and
         // to tooling. `parse_with` keeps error spans inside the literal rather
         // than on the attribute as a whole.
-        "attrs" => {
+        ATTRS => {
             stream.parse::<Token![=]>()?;
             if !stream.peek(LitStr) {
-                return Err(stream.error(
-                    r##"expected a string of attributes, as in `attrs = "#[derive(Debug)]"`"##,
-                ));
+                return Err(stream.error(format!(
+                    r##"expected a string of attributes, as in `{ATTRS} = "#[derive(Debug)]"`"##
+                )));
             }
             let literal = stream.parse::<LitStr>()?;
             let attrs = literal.parse_with(Attribute::parse_outer)?;
@@ -362,17 +434,24 @@ fn option(key: &Ident, stream: ParseStream, options: &mut Options, in_group: boo
             if let Some(doc) = attrs.iter().find(|attr| attr.path().is_ident("doc")) {
                 return Err(Error::new_spanned(
                     doc,
-                    "`attrs` cannot document the enum: its documentation is generated \
-                     and is the same for every sealed trait",
+                    format!(
+                        "`{ATTRS}` cannot document the enum: its documentation is generated \
+                         and is the same for every sealed trait"
+                    ),
                 ));
             }
-            options.attrs.get_or_insert_default().extend(attrs);
+            if options.attrs.replace(attrs).is_some() {
+                return Err(duplicate(key));
+            }
         }
         unknown => {
             let where_ = if in_group {
-                "expected `skip`, `name`, `match_any`, `no_bridge` or `attrs`"
+                format!("expected `{SKIP}`, `{NAME}`, `{MATCH_ANY}`, `{NO_BRIDGE}` or `{ATTRS}`")
             } else {
-                "expected `owned`, `ref`, `mut`, `name`, `match_any`, `no_bridge` or `crate`"
+                format!(
+                    "expected `{OWNED}`, `{REF}`, `{MUT}`, `{NAME}`, `{MATCH_ANY}`, \
+                     `{NO_BRIDGE}` or `{CRATE}`"
+                )
             };
             return Err(Error::new_spanned(
                 key,
@@ -381,6 +460,33 @@ fn option(key: &Ident, stream: ParseStream, options: &mut Options, in_group: boo
         }
     }
     Ok(())
+}
+
+/// `#[enumerate]` written twice, which is one enum too many.
+///
+/// An attribute is handed the item with the attributes *below* it still
+/// attached, so a second one is visible from the first. Only the spellings this
+/// crate is reached by are read as a duplicate: another crate's `enumerate`
+/// would be refused here for no reason, and rustc reports the duplicate enums
+/// anyway.
+///
+/// Refusing here stops *this* expansion and leaves the one below to run, which
+/// is the opposite of what `#[sealed]` does with its own duplicate, and for the
+/// opposite reason: what this macro writes is named by the caller, so dropping
+/// both would leave every use of `AnyShape` unresolved, while the enums the
+/// duplicate would have written are the same ones.
+fn repeated_attribute(item: &ItemTrait) -> Result<()> {
+    match item.attrs.iter().find(|attr| ours(attr, "enumerate")) {
+        Some(attr) => Err(Error::new_spanned(
+            attr,
+            format!(
+                "`#[{}]` is written twice, and each one generates the enums.\nWrite it once, \
+                 above the `#[sealed(..)]` it reads",
+                render(attr.path()),
+            ),
+        )),
+        None => Ok(()),
+    }
 }
 
 /// `#[enumerate]` has to sit above it.
@@ -400,6 +506,23 @@ fn sealed_types(item: &ItemTrait) -> Result<Vec<SealedType>> {
                 .is_some_and(|segment| segment.ident == "sealed")
         })
         .collect();
+
+    // Two lists are one too many, and saying so here matters as much as saying it
+    // from `#[sealed]`: this macro runs first, and anything it generates from one
+    // of the lists would refuse every type in the other.
+    let mut seen = HashSet::new();
+    for attr in &candidates {
+        let path = render(attr.path());
+        if !seen.insert(path.clone()) {
+            return Err(Error::new_spanned(
+                attr,
+                format!(
+                    "`#[{path}(..)]` is written twice, and a trait is sealed to one list.\nWrite \
+                     one attribute listing every permitted type"
+                ),
+            ));
+        }
+    }
 
     let bare = candidates
         .iter()
@@ -421,11 +544,28 @@ fn sealed_types(item: &ItemTrait) -> Result<Vec<SealedType>> {
         )
     })?;
 
-    parse_sealed(attr)
+    // An empty seal is a trait nothing may implement, which `#[sealed]` allows.
+    // There is no enum to make from it: one with no variants could be neither
+    // constructed nor matched, and the borrowing pair could not even declare the
+    // lifetime they carry.
+    match parse_sealed(attr)? {
+        types if types.is_empty() => Err(Error::new_spanned(
+            attr,
+            "`#[enumerate]` needs at least one type to make an enum from, and this \
+             `#[sealed(..)]` lists none",
+        )),
+        types => Ok(types),
+    }
 }
 
 fn parse_sealed(attr: &Attribute) -> Result<Vec<SealedType>> {
-    Ok(sealed::Args::parse(attr.meta.require_list()?.tokens.clone())?.types)
+    // `#[sealed]` written bare is an empty list rather than a malformed one, so
+    // the arguments are only required to parse when they are there at all.
+    let tokens = match &attr.meta {
+        Meta::Path(_) => TokenStream::new(),
+        meta => meta.require_list()?.tokens.clone(),
+    };
+    Ok(sealed::Args::parse(tokens)?.types)
 }
 
 /// The enum's parameters: those of the trait that at least one entry names.
@@ -442,11 +582,166 @@ fn enum_parameters(item: &ItemTrait, entries: &[SealedType]) -> Vec<GenericParam
         .collect()
 }
 
-fn uses(ty: &Type, param: &GenericParam) -> bool {
+/// A trait parameter carrying whatever the entry's binder asked of it as well.
+///
+/// `for<U: Debug> Held<U>: Keep<U>` says `Held<T>` implements `Keep<T>` only where
+/// `T: Debug`, so the impls carrying it into the enum say the same. Without this
+/// they would claim it for every `T`, and an `AnyKeep<T>` could hold a `Held<T>`
+/// that does not implement the trait at all.
+fn bounded(param: &GenericParam, entry: &SealedType) -> GenericParam {
+    let name = name_of(param);
+    let bound = entry
+        .binder
+        .iter()
+        .flat_map(|binder| binder.params.iter())
+        .find(|bound| name_of(bound) == name);
+
+    // Only what the trait does not already ask: the two lists overlap whenever a
+    // binder repeats a bound the trait declares, and `T: Debug + Debug` compiles
+    // but reads as a mistake.
+    match (param.clone(), bound) {
+        (GenericParam::Type(mut param), Some(GenericParam::Type(bound))) => {
+            let known: Vec<String> = param.bounds.iter().map(render).collect();
+            let added = bound
+                .bounds
+                .iter()
+                .filter(|bound| !known.contains(&render(bound)))
+                .cloned()
+                .collect::<Vec<_>>();
+            param.bounds.extend(added);
+            GenericParam::Type(param)
+        }
+        (GenericParam::Lifetime(mut param), Some(GenericParam::Lifetime(bound))) => {
+            let known: Vec<String> = param.bounds.iter().map(render).collect();
+            let added = bound
+                .bounds
+                .iter()
+                .filter(|bound| !known.contains(&render(bound)))
+                .cloned()
+                .collect::<Vec<_>>();
+            param.bounds.extend(added);
+            GenericParam::Lifetime(param)
+        }
+        // A const parameter carries no bounds, and a mismatched kind is rustc's
+        // to report against the instantiation.
+        (param, _) => param,
+    }
+}
+
+fn uses(ty: &impl ToTokens, param: &GenericParam) -> bool {
     match param {
         GenericParam::Lifetime(param) => lifetimes(ty).contains(&param.lifetime.ident),
         GenericParam::Type(param) => mentions(ty, &param.ident.to_string()),
         GenericParam::Const(param) => mentions(ty, &param.ident.to_string()),
+    }
+}
+
+/// The entry's type written in the trait's own parameters.
+///
+/// A `for<..>` declares parameters the trait never did, and the enum is named in
+/// a supertrait bound where only the trait's are in scope. The instantiation is
+/// what ties the two together: in `for<U> Boxed<U>: Store<U>` on `trait Store<T>`,
+/// `U` stands where `T` does, so the variant holds `Boxed<T>`.
+///
+/// A binder parameter the instantiation does not place stays free, and an entry
+/// whose type needs one cannot be held at all.
+fn in_traits_terms(entry: SealedType, item: &ItemTrait) -> Result<SealedType> {
+    let Some(binder) = &entry.binder else {
+        return Ok(entry);
+    };
+
+    // Positional, as the trait's parameters and the instantiation's arguments
+    // line up: only an argument that is exactly a bound name places one.
+    let arguments = entry
+        .instantiation
+        .as_ref()
+        .map(instantiation_arguments)
+        .unwrap_or_default();
+    let renames: Vec<(String, TokenStream)> = item
+        .generics
+        .params
+        .iter()
+        .zip(arguments)
+        .filter_map(|(param, given)| {
+            let given = render(&given);
+            let bound = binder
+                .params
+                .iter()
+                .find(|bound| name_of_argument(bound) == given)?;
+            Some((name_of_argument(bound), argument(param)))
+        })
+        .collect();
+
+    for bound in &binder.params {
+        let name = name_of_argument(bound);
+        let used = match bound {
+            GenericParam::Lifetime(bound) => lifetimes(&entry.ty)
+                .iter()
+                .any(|found| found == &bound.lifetime.ident),
+            other => mentions(&entry.ty, &name_of(other)),
+        };
+        if !used || renames.iter().any(|(from, _)| from == &name) {
+            continue;
+        }
+
+        // Only worth suggesting where the trait has a parameter to stand for.
+        let remedy = match item.generics.params.is_empty() {
+            true => format!(
+                "Declare `{name}` on `{}` itself, or remove `#[enumerate]`",
+                item.ident
+            ),
+            false => format!(
+                "Write `: {}<..>` with `{name}` where that parameter goes, or remove \
+                 `#[enumerate]`",
+                item.ident,
+            ),
+        };
+        return Err(Error::new_spanned(
+            &entry.ty,
+            format!(
+                "`#[enumerate]` cannot hold `{}`: `{name}` is bound by the `for<..>` and the \
+                 instantiation does not say which of `{}`'s parameters it stands for, so the \
+                 generated enum could not be named in its supertrait bound.\n{remedy}",
+                render(&entry.ty),
+                item.ident,
+            ),
+        ));
+    }
+
+    // The instantiation is rewritten with it: it says which `Store` the type
+    // implements, and must say so in the same parameters the type now uses.
+    let instantiation = match &entry.instantiation {
+        Some(path) => Some(syn::parse2(rename(path, &renames))?),
+        None => None,
+    };
+
+    // Kept rather than dropped, renamed along with everything else: a bound the
+    // binder wrote is the caller's, and the impls carrying the type into the enum
+    // have to keep it. `for<U: Debug> Held<U>: Keep<U>` becomes `for<T: Debug>`,
+    // and only `Held<T>` where `T: Debug` reaches `AnyKeep<T>`.
+    let params = binder
+        .params
+        .iter()
+        .map(|param| syn::parse2::<GenericParam>(rename(param, &renames)))
+        .collect::<Result<_>>()?;
+    let binder = Generics {
+        params,
+        ..binder.clone()
+    };
+
+    Ok(SealedType {
+        ty: syn::parse2(rename(&entry.ty, &renames))?,
+        binder: Some(binder),
+        instantiation,
+        ..entry
+    })
+}
+
+/// The arguments an instantiation writes, as in `Store<i32>`.
+fn instantiation_arguments(path: &Path) -> Vec<GenericArgument> {
+    match path.segments.last().map(|segment| &segment.arguments) {
+        Some(PathArguments::AngleBracketed(arguments)) => arguments.args.iter().cloned().collect(),
+        _ => Vec::new(),
     }
 }
 
@@ -455,29 +750,21 @@ fn uses(ty: &Type, param: &GenericParam) -> bool {
 fn variant(entry: &SealedType, item: &ItemTrait, shared: &[GenericParam]) -> Result<Variant> {
     let ty = &entry.ty;
 
-    // A binder introduces parameters the trait never declared, so the pin could
-    // not name them. Same reason a lifetime the trait does not declare is out.
-    if entry.binder.is_some() {
-        return Err(Error::new_spanned(
-            ty,
-            format!(
-                "`#[enumerate]` cannot hold `{}`: a `for<..>` type is generic over parameters \
-                 `{}` does not declare, so the generated enum could not be named in its \
-                 supertrait bound.\nEither drop the binder and declare the parameter on \
-                 `{}` itself, or remove `#[enumerate]`",
-                render(ty),
-                item.ident,
-                item.ident,
-            ),
-        ));
-    }
-
+    // The instantiation counts as much as the type does: `Plain: Keep<T>` names
+    // `T` where `Plain` names nothing, and the impls carrying it into the enum
+    // have to declare what they name.
     let declared: Vec<GenericParam> = item
         .generics
         .params
         .iter()
-        .filter(|param| uses(ty, param))
-        .cloned()
+        .filter(|param| {
+            uses(ty, param)
+                || entry
+                    .instantiation
+                    .as_ref()
+                    .is_some_and(|path| uses(path, param))
+        })
+        .map(|param| bounded(param, entry))
         .collect();
 
     let free: Vec<_> = lifetimes(ty)
@@ -583,36 +870,11 @@ fn enum_arguments(
         let chosen = match annotated {
             Some(annotated) => annotated,
             None if declared.iter().any(|known| name_of(known) == name) => argument(param),
-            None => {
-                let ty = &entry.ty;
-                let sample = match param {
-                    GenericParam::Lifetime(_) => "'static".to_owned(),
-                    _ => "..".to_owned(),
-                };
-                let arguments = item
-                    .generics
-                    .params
-                    .iter()
-                    .map(|other| {
-                        if name_of(other) == name {
-                            sample.clone()
-                        } else {
-                            name_of_argument(other)
-                        }
-                    })
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                return Err(Error::new_spanned(
-                    ty,
-                    format!(
-                        "`{ty}` does not name `{name}`, which the generated enum is generic \
-                         over, so there is no single `Any{trait_}` it can turn into.\nSay how it \
-                         instantiates the trait: `{ty}: {trait_}<{arguments}>`",
-                        ty = render(ty),
-                        trait_ = item.ident,
-                    ),
-                ));
-            }
+            // The entry says nothing about which instantiation it implements,
+            // and `#[sealed]` refuses it for that on its own. Repeating its
+            // wording at its span leaves one diagnostic rather than two saying
+            // the same thing about the same entry.
+            None => return Err(sealed::needs_instantiation(&entry.ty, item)),
         };
         arguments.push(chosen);
     }
@@ -652,8 +914,15 @@ fn dispatchable(item: &ItemTrait, entries: &[SealedType], shared: &[GenericParam
         ));
     }
 
-    if let Some(entry) = entries.iter().find(|entry| entry.instantiation.is_some()) {
-        let instantiation = entry.instantiation.as_ref().expect("just matched");
+    // An instantiation only bars the entry when it *fixes* something: written in
+    // the trait's own parameters it is the identity, and the entry is a variant of
+    // every instantiation like any other.
+    let wanted = render(&trait_bound(item, shared));
+    let pinned = entries.iter().find_map(|entry| {
+        let instantiation = entry.instantiation.as_ref()?;
+        (render(instantiation) != wanted).then_some((entry, instantiation))
+    });
+    if let Some((entry, instantiation)) = pinned {
         return Err(Error::new_spanned(
             &entry.ty,
             format!(
@@ -662,7 +931,7 @@ fn dispatchable(item: &ItemTrait, entries: &[SealedType], shared: &[GenericParam
                  option, or make `{ty}` generic over the same parameters as `{trait_}`",
                 ty = render(&entry.ty),
                 had = render(instantiation),
-                want = render(&trait_bound(item, shared)),
+                want = wanted,
                 trait_ = item.ident,
             ),
         ));
@@ -798,7 +1067,7 @@ mod tests {
     #[test]
     fn a_grouped_name_is_a_base_each_kind_extends() {
         assert_eq!(
-            names(quote!(name = Shapes)),
+            names(quote!(name = "Shapes")),
             vec![
                 Some("Shapes".to_owned()),
                 Some("ShapesRef".to_owned()),
@@ -811,7 +1080,7 @@ mod tests {
     fn a_specific_name_is_the_name_itself() {
         // and leaves the other two on the grouped base
         assert_eq!(
-            names(quote!(name = Shapes, ref(name = View))),
+            names(quote!(name = "Shapes", ref(name = "View"))),
             vec![
                 Some("Shapes".to_owned()),
                 Some("View".to_owned()),
@@ -831,7 +1100,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            macros(quote!(match_any(walk))),
+            macros(quote!(match_any("walk"))),
             vec![
                 Some("walk".to_owned()),
                 Some("walk_ref".to_owned()),
@@ -843,7 +1112,7 @@ mod tests {
     #[test]
     fn a_specific_macro_name_overrides_just_that_one() {
         assert_eq!(
-            macros(quote!(match_any, mut(match_any(walk)))),
+            macros(quote!(match_any, mut(match_any("walk")))),
             vec![
                 Some("match_any_shape".to_owned()),
                 Some("match_any_shape_ref".to_owned()),
@@ -901,7 +1170,7 @@ mod tests {
     #[test]
     fn a_grouped_no_bridge_cannot_be_undone_by_a_group() {
         assert_eq!(
-            bridges(quote!(no_bridge, ref(name = View))),
+            bridges(quote!(no_bridge, ref(name = "View"))),
             vec![Some(false); 3]
         );
     }
@@ -923,6 +1192,111 @@ mod tests {
         }
     }
 
+    /// Every option is written at most once. A second one would be ignored,
+    /// silently win over the first, or merge into it, and none of the three is
+    /// what writing it twice says.
+    #[test]
+    fn every_option_forbids_duplicates() {
+        let cases = [
+            (quote!(name = "A", name = "B"), "name"),
+            (quote!(crate = "::a", crate = "::b"), "crate"),
+            (quote!(match_any("a"), match_any("b")), "match_any"),
+            (quote!(no_bridge, no_bridge), "no_bridge"),
+            (quote!(owned(skip, skip)), "skip"),
+            (
+                quote!(owned(
+                    attrs = "#[derive(Debug)]",
+                    attrs = "#[non_exhaustive]"
+                )),
+                "attrs",
+            ),
+        ];
+
+        for (attr, option) in cases {
+            let message = refused(attr);
+            assert!(
+                message.contains(&format!("duplicate `{option}`")),
+                "`{option}` written twice gave {message}"
+            );
+        }
+    }
+
+    /// The groups too: a second one would merge into the first rather than
+    /// replace it.
+    #[test]
+    fn every_group_forbids_duplicates() {
+        for group in ["owned", "ref", "mut"] {
+            let attr: TokenStream = format!("{group}(no_bridge), {group}(name = \"A\")")
+                .parse()
+                .expect("the options parse");
+            let message = refused(attr);
+            assert!(
+                message.contains(&format!("duplicate `{group}(..)` group")),
+                "`{group}` written twice gave {message}"
+            );
+        }
+    }
+
+    /// An attribute sees the ones written below it, so a second `#[enumerate]`
+    /// is visible from the first. Only the spellings this crate is reached by
+    /// count as one.
+    #[test]
+    fn a_second_enumerate_attribute_is_refused() {
+        let refused = |item: ItemTrait| match Input::parse(TokenStream::new(), item) {
+            Err(error) => error.to_string(),
+            Ok(_) => panic!("expected the attribute to be refused"),
+        };
+
+        let message = refused(parse_quote!(
+            #[enumerate]
+            #[sealed(Square)]
+            pub trait Shape {}
+        ));
+        assert!(message.contains("is written twice"), "{message}");
+
+        let message = refused(parse_quote!(
+            #[closed_trait::enumerate]
+            #[sealed(Square)]
+            pub trait Shape {}
+        ));
+        assert!(message.contains("is written twice"), "{message}");
+    }
+
+    /// Another crate's `enumerate` is not this one's, and rustc reports the
+    /// duplicate enums if it turns out to be.
+    #[test]
+    fn another_crates_enumerate_is_left_alone() {
+        let item: ItemTrait = parse_quote!(
+            #[other::enumerate]
+            #[sealed(Square)]
+            pub trait Shape {}
+        );
+        assert!(Input::parse(TokenStream::new(), item).is_ok());
+    }
+
+    /// Every list here takes a trailing comma, including the one-item list a
+    /// `match_any(..)` name is written in.
+    #[test]
+    fn a_trailing_comma_is_accepted_everywhere() {
+        assert_eq!(
+            names(quote!(name = "Shapes", ref(name = "View",),)),
+            names(quote!(name = "Shapes", ref(name = "View")))
+        );
+        assert_eq!(
+            macros(quote!(match_any("walk",),)),
+            macros(quote!(match_any("walk")))
+        );
+        assert!(parse_args(quote!(owned(skip,),)).is_ok());
+    }
+
+    /// One name, which each enum extends. Naming them separately is what the
+    /// groups are for.
+    #[test]
+    fn match_any_takes_one_name() {
+        let message = refused(quote!(match_any("one", "two")));
+        assert!(message.contains("takes one name"), "{message}");
+    }
+
     #[test]
     fn bare_attrs_is_refused() {
         assert!(refused(quote!(attrs = "#[derive(Debug)]")).contains("one enum at a time"));
@@ -933,9 +1307,12 @@ mod tests {
         assert!(refused(quote!(skip)).contains("unknown option `skip`"));
     }
 
+    /// A name is written as a string, as it is for every other macro here, so
+    /// the bare identifier is refused with the spelling that works.
     #[test]
-    fn a_repeated_name_is_refused() {
-        assert!(refused(quote!(name = A, name = B)).contains("duplicate `name`"));
-        assert!(refused(quote!(crate = "::a", crate = "::b")).contains("duplicate `crate`"));
+    fn a_bare_name_is_refused() {
+        assert!(refused(quote!(name = Shapes)).contains(r#"`name = "Shapes"`"#));
+        assert!(refused(quote!(ref(name = View))).contains(r#"`name = "Shapes"`"#));
+        assert!(refused(quote!(match_any(walk))).contains(r#"`match_any("match_shape")`"#));
     }
 }

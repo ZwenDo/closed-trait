@@ -1,0 +1,25 @@
+error[E0277]: `T` doesn't implement `std::fmt::Debug`
+  --> tests/ui/sealed_binder_bound_narrows_the_seal.rs:11:22
+   |
+11 | impl<T> Store<T> for Plain {}
+   |                      ^^^^^ the trait `std::fmt::Debug` is not implemented for `T`
+   |
+note: required for `Plain` to implement `Sealed<T>`
+  --> tests/ui/sealed_binder_bound_narrows_the_seal.rs:8:1
+   |
+ 8 | #[sealed(for<T: Debug> Plain: Store<T>)]
+   | ^^^^^^^^^^^^^^^^-----^^^^^^^^^^^^^^^^^^^
+   |                 |
+   |                 unsatisfied trait bound introduced here
+note: required by a bound in `Store`
+  --> tests/ui/sealed_binder_bound_narrows_the_seal.rs:8:1
+   |
+ 8 | #[sealed(for<T: Debug> Plain: Store<T>)]
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Store`
+ 9 | pub trait Store<T> {}
+   |           ----- required by a bound in this trait
+   = note: this error originates in the attribute macro `sealed` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: consider restricting type parameter `T` with trait `Debug`
+   |
+11 | impl<T: std::fmt::Debug> Store<T> for Plain {}
+   |       +++++++++++++++++

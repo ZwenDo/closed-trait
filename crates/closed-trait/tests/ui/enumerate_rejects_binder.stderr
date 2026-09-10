@@ -1,5 +1,5 @@
-error: `#[enumerate]` cannot hold `Boxed<T>`: a `for<..>` type is generic over parameters `Shape` does not declare, so the generated enum could not be named in its supertrait bound.
-       Either drop the binder and declare the parameter on `Shape` itself, or remove `#[enumerate]`
+error: `#[enumerate]` cannot hold `Boxed<T>`: `T` is bound by the `for<..>` and the instantiation does not say which of `Shape`'s parameters it stands for, so the generated enum could not be named in its supertrait bound.
+       Declare `T` on `Shape` itself, or remove `#[enumerate]`
  --> tests/ui/enumerate_rejects_binder.rs:6:17
   |
 6 | #[sealed(for<T> Boxed<T>)]

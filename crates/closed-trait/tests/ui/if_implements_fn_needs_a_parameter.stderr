@@ -1,0 +1,5 @@
+error: the first parameter is the one whose bounds are tested, so there has to be one
+ --> tests/ui/if_implements_fn_needs_a_parameter.rs:4:12
+  |
+4 | fn describe() -> String {
+  |            ^^

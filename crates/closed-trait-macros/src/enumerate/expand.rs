@@ -480,9 +480,10 @@ fn match_macro(
 
     let held = if borrow.is_some() { "borrows" } else { "holds" };
     let summary = format!("Runs one body against whichever type an `{enum_ident}` {held}.");
-    // `text`, and not `ignore` or `no_run`: anything rustdoc still considers
-    // Rust is compiled as a doctest of whichever crate this expands in, where
-    // none of these names are in scope.
+    // `ignore`, which rustdoc renders as Rust and does not compile. Nothing here
+    // could be compiled: `value`, `binding` and `body` stand for what the caller
+    // writes, and a doctest of the crate this expands in has no value of the enum
+    // to hand a real one.
     let fence = "```ignore";
     // The borrowing enum already holds references, and is `Copy`, so there is
     // only ever one way to pass it.

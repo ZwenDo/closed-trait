@@ -1,0 +1,5 @@
+error: an `unsafe fn` cannot be used here: what this hands back is safe to call, which would hide the unsafety rather than carry it
+ --> tests/ui/if_implements_fn_rejects_unsafe.rs:5:1
+  |
+5 | unsafe fn describe(value: impl Display) -> String {
+  | ^^^^^^

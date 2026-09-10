@@ -1,0 +1,6 @@
+error: `#[enumerate]` cannot hold `Boxed<U>`: `U` is bound by the `for<..>` and the instantiation does not say which of `Store`'s parameters it stands for, so the generated enum could not be named in its supertrait bound.
+       Write `: Store<..>` with `U` where that parameter goes, or remove `#[enumerate]`
+ --> tests/ui/enumerate_binder_is_not_placed.rs:8:17
+  |
+8 | #[sealed(for<U> Boxed<U>: Store<i32>)]
+  |                 ^^^^^^^^

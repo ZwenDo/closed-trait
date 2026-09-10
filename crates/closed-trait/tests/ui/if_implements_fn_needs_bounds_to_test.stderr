@@ -1,0 +1,5 @@
+error: the first parameter's type has to be a type parameter this function declares, or an `impl Bound` standing for one, so that there are bounds to test: `fn f<T: Bound>(v: &T)` and `fn f(v: &impl Bound)` both work
+ --> tests/ui/if_implements_fn_needs_bounds_to_test.rs:4:20
+  |
+4 | fn describe(value: u8) -> String {
+  |                    ^^

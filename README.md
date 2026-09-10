@@ -70,8 +70,8 @@ Note that `#[enumerate]` reads its type list from the `#[sealed(..)]` below it, 
 
 ## Why seal a trait?
 
-Sealing earns its place before any enum is generated. Part of a public trait is frozen the moment it ships, whatever
-you do: its method signatures belong to every caller, and no seal changes that. What sealing frees is the other side: a
+Sealing earns its place before any enum is generated. Part of a public trait is frozen the moment it ships, whatever you
+do: its method signatures belong to every caller, and no seal changes that. What sealing frees is the other side: a
 trait anyone can implement cannot gain a required method or a new supertrait without breaking every implementation
 downstream, so its API can only ever grow by defaults. Seal it and no outside implementation exists, so both become
 ordinary changes: add them and just fix your own types.
@@ -116,21 +116,28 @@ for anything else.
 
 | generated                                                     | what it is                                                        |
 |---------------------------------------------------------------|-------------------------------------------------------------------|
-| `AnyShape`, `AnyShapeRef<'a>`, `AnyShapeMut<'a>`              | one variant per permitted type: owning, shared, unique           |
+| `AnyShape`, `AnyShapeRef<'a>`, `AnyShapeMut<'a>`              | one variant per permitted type: owning, shared, unique            |
 | `From<Square>`, `From<&Square>`, `From<&mut Square>`          | one per permitted type, into the matching enum                    |
 | `Enumerable`, `EnumerableRef`, `EnumerableMut`                | supertraits carrying `into_enum`, `as_enum_ref` and `as_enum_mut` |
 | `AnyShape::as_ref`, `AnyShape::as_mut`, `AnyShapeMut::as_ref` | between the enums, without going back through the concrete type   |
-| `match_any_shape!` and its two borrowing twins                | with the `match_any` option, a match over every variant          |
+| `match_any_shape!` and its two borrowing twins                | with the `match_any` option, a match over every variant           |
 
 The match macro is the piece a plain `match` cannot replace: it hands the body the **concrete** type. Rust has no
 generic closures, so copying the body into every arm is the only way to have one body that still knows what it has.
 Being a `match` rather than a call, `return` and `?` in the body leave the enclosing function, the body may move
 anything it owns, and it can be `async`.
 
-The one thing it does not generate is an `impl Shape for AnyShape`, and that is deliberate, because forwarding cannot always be
-written. A trait with an associated type, `type Bar; fn make(&self) -> Self::Bar`, has no single return type to give the
-enum, since every implementor picks its own. Per-arm bodies never face that, because nothing has to unify. And where
-forwarding does make sense, it is one line: `match_any_shape!(self, s => s.area())` in an inherent impl.
+A call inside an arm still has to compile for *every* variant, so a function with bounds cannot be called there at all:
+`print_debug(v)` fails on the one variant that is not `Debug`, however many of the others are. `#[if_implements_fn]`
+moves that test into a macro. Written on `print_debug`, it generates `try_print_debug!`, which hands back `Some` of the
+function where the bounds hold and `None` where they do not. See
+[`#[if_implements_fn]`](https://docs.rs/closed-trait/latest/closed_trait/attr.if_implements_fn.html), which works
+through the whole example.
+
+The one thing it does not generate is an `impl Shape for AnyShape`, and that is deliberate, because forwarding cannot
+always be written. A trait with an associated type, `type Bar; fn make(&self) -> Self::Bar`, has no single return type
+to give the enum, since every implementor picks its own. Per-arm bodies never face that, because nothing has to unify.
+And where forwarding does make sense, it is one line: `match_any_shape!(self, s => s.area())` in an inherent impl.
 
 ## Constraints
 
@@ -139,8 +146,8 @@ Each piece asks something in return, and each rule follows from how that piece w
 **`#[sealed]` has to name your types**, so they must live at module level: the generated module refers to them by path,
 and a type declared inside a function body cannot be reached from there.
 
-**The enums hold their types by value**, so every permitted type must be `Sized`. `#[sealed]` on its own is content
-with `str` or `[u8]`; it is only `#[enumerate]` that needs the bound.
+**The enums hold their types by value**, so every permitted type must be `Sized`. `#[sealed]` on its own is content with
+`str` or `[u8]`; it is only `#[enumerate]` that needs the bound.
 
 **`match_any` copies the body into every arm.** That copying is exactly what gives the body a concrete type, and the
 rest follows from it. The body is type-checked once per variant, a mistake in it is reported once per variant, and
@@ -149,14 +156,16 @@ Code size is unaffected: a generic function is monomorphised per type either way
 
 **A type fixed to one instantiation cannot use `match_any`.** `#[sealed(Plain: Store<i32>)]` still gives `Plain` its
 variant, but the macro expands one body across all of them, and that body has to hold at every instantiation, which a
-variant fixed to `i32` does not. See [`#[enumerate]`](https://docs.rs/closed-trait/latest/closed_trait/attr.enumerate.html).
+variant fixed to `i32` does not. See
+[`#[enumerate]`](https://docs.rs/closed-trait/latest/closed_trait/attr.enumerate.html).
 
 ## Documentation
 
-Both attributes are documented in full, with the entry grammar, every option, and the borrowing enums:
+Each attribute has its own reference, covering every option and every rule it places on what it is written on:
 
 - [`#[sealed]`](https://docs.rs/closed-trait/latest/closed_trait/attr.sealed.html)
 - [`#[enumerate]`](https://docs.rs/closed-trait/latest/closed_trait/attr.enumerate.html)
+- [`#[if_implements_fn]`](https://docs.rs/closed-trait/latest/closed_trait/attr.if_implements_fn.html)
 
 ## Notes
 

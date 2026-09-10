@@ -1,0 +1,26 @@
+error[E0599]: the method `into_enum` exists for struct `Held<NotDebug>`, but its trait bounds were not satisfied
+  --> tests/ui/enumerate_keeps_a_binders_bound.rs:18:47
+   |
+ 5 | pub struct Held<U>(pub U);
+   | ------------------ method `into_enum` not found for this struct because it doesn't satisfy `Held<NotDebug>: Enumerable<AnyKeep<NotDebug>>`
+...
+13 | pub struct NotDebug;
+   | ------------------- doesn't satisfy `NotDebug: std::fmt::Debug`
+...
+18 |     let _: AnyKeep<NotDebug> = Held(NotDebug).into_enum();
+   |                                               ^^^^^^^^^ method cannot be called on `Held<NotDebug>` due to unsatisfied trait bounds
+   |
+note: trait bound `NotDebug: std::fmt::Debug` was not satisfied
+  --> tests/ui/enumerate_keeps_a_binders_bound.rs:8:17
+   |
+ 7 | #[enumerate]
+   | ------------
+ 8 | #[sealed(for<U: Debug> Held<U>: Keep<U>)]
+   |                 ^^^^^  -------
+   |                 |
+   |                 unsatisfied trait bound introduced here
+help: consider annotating `NotDebug` with `#[derive(Debug)]`
+   |
+13 + #[derive(Debug)]
+14 | pub struct NotDebug;
+   |
