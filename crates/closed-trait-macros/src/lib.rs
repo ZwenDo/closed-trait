@@ -1,7 +1,5 @@
-//! Attribute macros for the [`closed-trait`] crate. Use them through that crate,
-//! which re-exports both and provides the items the generated code refers to.
-//!
-//! [`closed-trait`]: https://docs.rs/closed-trait
+//! Attribute macros for the [`closed-trait`](https://docs.rs/closed-trait) crate. Use them through
+//! that crate, which re-exports both and provides the items the generated code refers to.
 mod enumerate;
 mod implements;
 mod sealed;
@@ -256,7 +254,7 @@ use proc_macro::TokenStream;
 /// nested in a function can refer to it.
 #[proc_macro_attribute]
 pub fn sealed(args: TokenStream, item: TokenStream) -> TokenStream {
-    sealed::sealed(args, item)
+    sealed::process(args, item)
 }
 
 /// Generates enums holding the types a trait is sealed to and macros rules to work with these
@@ -630,7 +628,7 @@ pub fn sealed(args: TokenStream, item: TokenStream) -> TokenStream {
 /// report rather than this macro's, since sizedness is not visible in the tokens.
 #[proc_macro_attribute]
 pub fn enumerate(args: TokenStream, item: TokenStream) -> TokenStream {
-    enumerate::enumerate(args, item)
+    enumerate::process(args, item)
 }
 
 /// Generates a macro that instantiates the attributed function for a type, when that type satisfies
@@ -885,5 +883,5 @@ pub fn enumerate(args: TokenStream, item: TokenStream) -> TokenStream {
 /// match out, which grows tedious once the enum has dozens of variants.
 #[proc_macro_attribute]
 pub fn if_implements_fn(args: TokenStream, item: TokenStream) -> TokenStream {
-    implements::if_implements_attribute(args, item)
+    implements::process(args, item)
 }
