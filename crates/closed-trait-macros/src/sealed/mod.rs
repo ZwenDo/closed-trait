@@ -9,9 +9,9 @@ use crate::util::{ours, render};
 mod expand;
 mod input;
 
-pub(crate) use input::{Args, SealedType};
+pub(crate) use input::{Args, SealedType, needs_instantiation};
 
-pub(crate) fn sealed(args: TokenStream, item: TokenStream) -> TokenStream {
+pub(crate) fn process(args: TokenStream, item: TokenStream) -> TokenStream {
     let mut item = parse_macro_input!(item as ItemTrait);
 
     // An attribute is handed the item with the ones below it still attached, so

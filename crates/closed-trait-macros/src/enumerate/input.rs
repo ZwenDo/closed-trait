@@ -870,36 +870,11 @@ fn enum_arguments(
         let chosen = match annotated {
             Some(annotated) => annotated,
             None if declared.iter().any(|known| name_of(known) == name) => argument(param),
-            None => {
-                let ty = &entry.ty;
-                let sample = match param {
-                    GenericParam::Lifetime(_) => "'static".to_owned(),
-                    _ => "..".to_owned(),
-                };
-                let arguments = item
-                    .generics
-                    .params
-                    .iter()
-                    .map(|other| {
-                        if name_of(other) == name {
-                            sample.clone()
-                        } else {
-                            name_of_argument(other)
-                        }
-                    })
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                return Err(Error::new_spanned(
-                    ty,
-                    format!(
-                        "`{ty}` does not name `{name}`, which the generated enum is generic \
-                         over, so there is no single `Any{trait_}` it can turn into.\nSay how it \
-                         instantiates the trait: `{ty}: {trait_}<{arguments}>`",
-                        ty = render(ty),
-                        trait_ = item.ident,
-                    ),
-                ));
-            }
+            // The entry says nothing about which instantiation it implements,
+            // and `#[sealed]` refuses it for that on its own. Repeating its
+            // wording at its span leaves one diagnostic rather than two saying
+            // the same thing about the same entry.
+            None => return Err(sealed::needs_instantiation(&entry.ty, item)),
         };
         arguments.push(chosen);
     }

@@ -7,7 +7,7 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{ItemTrait, parse_macro_input};
 
-pub(crate) fn enumerate(args: TokenStream, item: TokenStream) -> TokenStream {
+pub(crate) fn process(args: TokenStream, item: TokenStream) -> TokenStream {
     let item = parse_macro_input!(item as ItemTrait);
     let original = item.clone();
     match Input::parse(args.into(), item) {

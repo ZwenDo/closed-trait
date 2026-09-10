@@ -89,20 +89,37 @@ fn unpinned_entries(types: &[SealedType], item: &ItemTrait) -> Result<()> {
             continue;
         }
 
-        let ty = render(&entry.ty);
-        let trait_ = &item.ident;
-        let example = needed.iter().map(|_| "..").collect::<Vec<_>>().join(", ");
-        return Err(Error::new_spanned(
-            &entry.ty,
-            format!(
-                "`{ty}` does not say which `{trait_}` it implements, so nothing can check that \
-                 it implements `{trait_}` at all.\nWrite `{ty}: {trait_}<{example}>` with the \
-                 arguments it implements"
-            ),
-        ));
+        return Err(needs_instantiation(&entry.ty, item));
     }
 
     Ok(())
+}
+
+/// The refusal for an entry that says nothing about which instantiation it
+/// implements.
+///
+/// Shared with `#[enumerate]`, which refuses the same entry for its own reason:
+/// an identical message at an identical span is one diagnostic rather than two,
+/// and the fix is the same either way.
+pub(crate) fn needs_instantiation(entry: &Type, item: &ItemTrait) -> Error {
+    let arguments = item
+        .generics
+        .params
+        .iter()
+        .filter(|param| !matches!(param, GenericParam::Lifetime(_)))
+        .map(|_| "..")
+        .collect::<Vec<_>>()
+        .join(", ");
+    let ty = render(entry);
+    let trait_ = &item.ident;
+    Error::new_spanned(
+        entry,
+        format!(
+            "`{ty}` does not say which `{trait_}` it implements, so nothing can check that it \
+             implements `{trait_}` at all.\nWrite `{ty}: {trait_}<{arguments}>` with the \
+             arguments it implements"
+        ),
+    )
 }
 
 /// A lifetime an entry names has to be bound by its own `for<..>`.
